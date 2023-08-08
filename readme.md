@@ -99,6 +99,7 @@ daily-bible-verse-bot/
 
 ## Credits
 
+- [Bible.org Labs](https://labs.bible.org/)
 - [Discord.js](https://discord.js.org/)
 - [Node.js](https://nodejs.org/)
 - [Canvas](https://www.npmjs.com/package/canvas)
