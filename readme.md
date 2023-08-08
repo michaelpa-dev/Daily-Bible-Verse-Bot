@@ -48,6 +48,7 @@ The Daily Bible Verse Bot is a Discord bot that provides users with daily Bible 
 - `/unsubscribe`: Unsubscribe from receiving daily Bible verses.
 - `/randomverse`: Get a random Bible verse via DM.
 - `/stats`: View bot statistics, including subscribed users and command usage.
+- `/support`: Get a link to the issue tracker for reporting issues and requesting support.
 
 ## Directory Structure
 
@@ -71,7 +72,8 @@ daily-bible-verse-bot/
 │ │ ├── subscribe.js
 │ │ ├── unsubscribe.js
 │ │ ├── randomverse.js
-│ │ └── stats.js
+│ │ ├── stats.js
+│ │ └── support.js
 │ ├── db/
 │ │ ├── subscribeDB.js
 │ │ └── statsDB.js
