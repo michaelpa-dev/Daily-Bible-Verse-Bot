@@ -31,14 +31,14 @@ When you're ready to contribute, follow these steps:
 3. **Test** your changes locally to verify they work as intended.
 4. **Commit** your changes with a clear and concise commit message.
 5. **Push** your branch to your forked repository: `git push origin your-branch-name`
-6. Create a **pull request** (PR) against the `main` branch of the original repository.
+6. Create a **pull request** (PR) against the `master` branch of the original repository.
 7. Provide a detailed description of your changes in the PR description.
 8. Reference any related issues by mentioning them in your description (e.g., "Fixes #123").
 
 ## Coding Guidelines
 
 - Follow the existing code style and conventions.
-- Maintain consistent formatting to ensure readability.
+- mastertain consistent formatting to ensure readability.
 - Document your code using comments as needed.
 
 ## Getting Help
