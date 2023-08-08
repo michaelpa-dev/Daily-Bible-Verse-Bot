@@ -1,0 +1,6 @@
+{
+    "botToken": "YOUR_BOT_TOKEN_HERE",
+    "bibleApiUrl": "https://labs.bible.org/api/?type=json&passage=",
+    "version": "0.1.0"
+  }
+  

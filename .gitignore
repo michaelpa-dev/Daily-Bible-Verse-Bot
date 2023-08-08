@@ -1,0 +1,8 @@
+node_modules
+/cfg/config.json
+/logs/bot*
+/logs/applicationExit*
+/logs/archive/bot*
+/logs/archive/applicationExit*
+/db/stats.json
+/db/subscribed_users.json
