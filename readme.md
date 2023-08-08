@@ -16,6 +16,7 @@ The Daily Bible Verse Bot is a Discord bot that provides users with daily Bible 
 
 ## If you wish to invite the bot to your server but do not want to run the bot yourself
 - [Invite Link For Bot](https://discord.com/api/oauth2/authorize?client_id=1138224345446105108&permissions=380104993792&scope=applications.commands%20bot)
+- Join our [Development Discord Server](https://discord.gg/VquUZs2msF) to engage with the community.
 
 ## Features
 
