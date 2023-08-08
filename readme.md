@@ -2,6 +2,18 @@
 
 The Daily Bible Verse Bot is a Discord bot that provides users with daily Bible verses, random verses, and more. It allows users to subscribe and unsubscribe from receiving daily verses and provides various statistics about its usage and activity.
 
+- [Daily Bible Verse Bot](#daily-bible-verse-bot)
+  - [If you wish to invite the bot to your server but do not want to run the bot yourself](#if-you-wish-to-invite-the-bot-to-your-server-but-do-not-want-to-run-the-bot-yourself)
+  - [Features](#features)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+  - [Usage](#usage)
+  - [Available Commands](#available-commands)
+  - [Directory Structure](#directory-structure)
+  - [Credits](#credits)
+  - [License](#license)
+
+
 ## If you wish to invite the bot to your server but do not want to run the bot yourself
 - [Invite Link For Bot](https://discord.com/api/oauth2/authorize?client_id=1138224345446105108&permissions=380104993792&scope=applications.commands%20bot)
 
@@ -26,7 +38,7 @@ The Daily Bible Verse Bot is a Discord bot that provides users with daily Bible 
 
 ## Usage
 
-1. Run the bot using `node ./js/bot.js` or the provided /scripts/pm2-startup.sh script.
+1. Run the bot using `node ./js/bot.js` or the provided `/scripts/pm2-startup.sh` script.
 2. Invite the bot to your Discord server using the provided invite link.
 3. Use the available slash commands to interact with the bot.
 
@@ -40,6 +52,8 @@ The Daily Bible Verse Bot is a Discord bot that provides users with daily Bible 
 ## Directory Structure
 
 daily-bible-verse-bot/
+
+```
 │
 ├── assets/
 │ ├── bible_scripture_icon.png
@@ -81,7 +95,7 @@ daily-bible-verse-bot/
 ├── package-lock.json
 ├── package.json
 └── README.md
-
+```
 
 ## Credits
 
