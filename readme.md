@@ -76,6 +76,7 @@ daily-bible-verse-bot/
 │ │ ├── randomverse.js
 │ │ ├── stats.js
 │ │ └── support.js
+│ │ └── version.js
 │ ├── db/
 │ │ ├── subscribeDB.js
 │ │ └── statsDB.js
