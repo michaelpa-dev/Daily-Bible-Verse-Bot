@@ -50,6 +50,7 @@ The Daily Bible Verse Bot is a Discord bot that provides users with daily Bible 
 - `/randomverse`: Get a random Bible verse via DM.
 - `/stats`: View bot statistics, including subscribed users and command usage.
 - `/support`: Get a link to the issue tracker for reporting issues and requesting support.
+- `/version`: Get the bot current release version
 
 ## Directory Structure
 
@@ -74,7 +75,8 @@ daily-bible-verse-bot/
 │ │ ├── unsubscribe.js
 │ │ ├── randomverse.js
 │ │ ├── stats.js
-│ │ └── support.js
+│ │ ├── support.js
+│ │ └── version.js
 │ ├── db/
 │ │ ├── subscribeDB.js
 │ │ └── statsDB.js
