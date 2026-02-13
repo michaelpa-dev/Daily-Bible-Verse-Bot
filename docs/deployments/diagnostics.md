@@ -10,7 +10,9 @@ Before the current deployment overhaul, CI/CD used SSH-based deploys:
 
 Issues observed:
 
-- Discord deploy webhook notifications could fail the deploy job (HTTP 403) depending on workflow step error-handling.
+- GitHub Actions workflows contained tab characters in YAML, causing immediate "workflow file issue" failures until converted to spaces.
+- Private-repo artifact downloads were attempted without proper GitHub auth headers, resulting in HTTP 403/404 when fetching Release assets.
+- Discord deploy webhook notifications could fail the deploy job (HTTP 403) depending on webhook configuration and error-handling (these were removed from the new pipeline to avoid blocking deploys).
 - The EC2 instances did not have IAM instance profiles, so SSM-based deployments were not available.
 - Security group ingress allowed SSH from `0.0.0.0/0` (unnecessarily open for a Discord bot with no inbound traffic needs).
 - Canary had no enforced auto-stop rule and could run indefinitely (violates the ephemeral-canary requirement).
@@ -23,6 +25,7 @@ The deploy approach is now:
 
 - Artifact: GitHub Release asset (`tar.gz`) produced by `build.yml`.
 - Deploy: AWS SSM RunCommand (`AWS-RunShellScript`), no SSH required.
+- Private-safe artifact download: Deploy workflows resolve a short-lived signed download URL via GitHub API on the runner (auth via `GITHUB_TOKEN` or optional `GH_RELEASE_TOKEN`), and pass only that signed URL to EC2 (no GitHub token on EC2).
 - Canary: auto-start on pushes to `master` (via `workflow_run` chain), auto-stop after 4 hours since the last push.
 - AWS Auth for Actions: GitHub OIDC role with scoped permissions (no long-lived AWS keys in GitHub).
 - SSH ingress removed (security group has no inbound rules).

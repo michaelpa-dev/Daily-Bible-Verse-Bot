@@ -58,7 +58,7 @@ Region: `us-east-1`
 - Deployment mechanism: AWS SSM RunCommand
   - `deploy-canary.yml` and `deploy-prod.yml` use GitHub OIDC to assume an AWS role.
   - The workflow resolves instances by tags (not hard-coded ids), starts the instance if needed, and runs a deploy script via SSM.
-  - The instance downloads the GitHub Release asset, swaps `/opt/daily-bible-verse-bot/app`, and restarts Docker Compose.
+  - The workflow resolves a short-lived signed GitHub download URL on the runner (auth via `GITHUB_TOKEN`, optional `GH_RELEASE_TOKEN`), then the instance downloads from that signed URL (no GitHub token on EC2), swaps `/opt/daily-bible-verse-bot/app`, and restarts Docker Compose.
 
 ## Network / Access
 

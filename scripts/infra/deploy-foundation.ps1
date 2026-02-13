@@ -179,16 +179,27 @@ function Ensure-IamInstanceProfileAssociation {
 
   $associations = (($assocRaw.Output | Out-String) | ConvertFrom-Json).IamInstanceProfileAssociations
   if ($associations -and $associations.Count -gt 0) {
-    $association = $associations[0]
+    # Prefer the active association when multiple entries exist.
+    $association = ($associations | Where-Object { $_.State -eq 'associated' } | Select-Object -First 1)
+    if (-not $association) {
+      $association = $associations[0]
+    }
+
     $associationId = [string]$association.AssociationId
-    $currentName = [string]$association.IamInstanceProfile.Name
+    $currentArn = [string]$association.IamInstanceProfile.Arn
+    $currentName = ''
+    if ($currentArn) {
+      $parts = $currentArn.Split('/')
+      $currentName = $parts[$parts.Length - 1]
+    }
 
     if ($currentName -eq $InstanceProfileName) {
       Write-Host "Instance profile already attached to ${InstanceId}: $InstanceProfileName"
       return
     }
 
-    Write-Host "Replacing instance profile for ${InstanceId}: $currentName -> $InstanceProfileName"
+    $currentLabel = if ($currentName) { $currentName } else { $currentArn }
+    Write-Host "Replacing instance profile for ${InstanceId}: $currentLabel -> $InstanceProfileName"
     $null = Invoke-External -FilePath $AwsCliPath -Arguments @(
       '--profile', $Profile,
       '--region', $Region,

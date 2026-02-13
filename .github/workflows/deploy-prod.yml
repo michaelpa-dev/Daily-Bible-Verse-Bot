@@ -112,15 +112,12 @@ jobs:
             --overwrite \
             --value "${BOT_TOKEN}" >/dev/null
 
-      - name: Deploy production via SSM RunCommand (GitHub Release artifact)
-        id: ssm
+      - name: Resolve release tag to deploy
+        id: meta
         shell: bash
         env:
-          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
-          GITHUB_REPO: ${{ github.repository }}
           RELEASE_TAG_FROM_EVENT: ${{ github.event.release.tag_name }}
           RELEASE_TAG_FROM_INPUT: ${{ github.event.inputs.release_tag }}
-          GIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
@@ -135,33 +132,107 @@ jobs:
             exit 1
           fi
 
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve GitHub release download URL (private-safe)
+        id: artifact
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
+          GITHUB_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${GITHUB_TOKEN}"
+
+          api="https://api.github.com"
+          asset_name="daily-bible-verse-bot-${RELEASE_TAG}.tar.gz"
+
+          release_json="$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}")" || {
+              echo "Failed to fetch release metadata for tag ${RELEASE_TAG}."
+              echo "If this repo is private and the default GITHUB_TOKEN cannot read releases, set env secret GH_RELEASE_TOKEN (classic PAT with repo scope) in the 'production' environment."
+              exit 1
+            }
+
+          asset_id="$(printf '%s' "${release_json}" | jq -r --arg name "${asset_name}" '.assets[] | select(.name==$name) | .id' | head -n 1 || true)"
+
+          download_kind="release_asset"
+          if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
+            echo "Release asset ${asset_name} not found for ${RELEASE_TAG}; falling back to repo tarball."
+            download_kind="source_archive"
+            asset_name="source.tar.gz"
+
+            headers="$(curl -sS -D - -o /dev/null \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              "${api}/repos/${GITHUB_REPO}/tarball/${RELEASE_TAG}")"
+          else
+            headers="$(curl -sS -D - -o /dev/null \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/octet-stream" \
+              "${api}/repos/${GITHUB_REPO}/releases/assets/${asset_id}")"
+          fi
+
+          download_url="$(printf '%s' "${headers}" | awk -F': ' 'tolower($1)=="location" {print $2}' | tail -n 1 | tr -d '\r')"
+          if [ -z "${download_url}" ]; then
+            echo "Failed to resolve a signed download URL from GitHub API." >&2
+            echo "If using GH_RELEASE_TOKEN, ensure it has access to this repo's releases." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::${download_url}"
+          echo "asset_name=${asset_name}" >> "$GITHUB_OUTPUT"
+          echo "download_url=${download_url}" >> "$GITHUB_OUTPUT"
+          echo "download_kind=${download_kind}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy production via SSM RunCommand (GitHub Release artifact)
+        id: ssm
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+          GITHUB_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          GIT_SHA: ${{ github.sha }}
+          ASSET_NAME: ${{ steps.artifact.outputs.asset_name }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.download_url }}
+          DOWNLOAD_KIND: ${{ steps.artifact.outputs.download_kind }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RELEASE_TAG}" ]; then
+            echo "RELEASE_TAG is empty; refusing to deploy." >&2
+            exit 1
+          fi
+
           deploy_script="$(cat <<SCRIPT
           set -euo pipefail
 
           DEPLOY_ROOT="/opt/daily-bible-verse-bot"
           ENVIRONMENT="production"
           GITHUB_REPO="${GITHUB_REPO}"
-          RELEASE_TAG="${release_tag}"
+          RELEASE_TAG="${RELEASE_TAG}"
           GIT_SHA="${GIT_SHA}"
             TOKEN_PARAM="${BOT_TOKEN_PARAMETER_NAME}"
 
-            ASSET_NAME="daily-bible-verse-bot-\${RELEASE_TAG}.tar.gz"
-            ARTIFACT_URL="https://github.com/\${GITHUB_REPO}/releases/download/\${RELEASE_TAG}/\${ASSET_NAME}"
-            ARCHIVE_URL="https://github.com/\${GITHUB_REPO}/archive/refs/tags/\${RELEASE_TAG}.tar.gz"
+            ASSET_NAME="${ASSET_NAME}"
+            ARTIFACT_URL="${ARTIFACT_URL}"
+            DOWNLOAD_KIND="${DOWNLOAD_KIND}"
 
             WORK_DIR="/tmp/dbv-release"
             rm -rf "\${WORK_DIR}"
             mkdir -p "\${WORK_DIR}"
             cd "\${WORK_DIR}"
 
-            echo "Downloading release asset: \${ARTIFACT_URL}"
-            if curl -fL "\${ARTIFACT_URL}" -o "\${ASSET_NAME}"; then
-              tar -xzf "\${ASSET_NAME}" -C "\${WORK_DIR}"
-              DEPLOY_SCRIPT_PATH="\${WORK_DIR}/scripts/deploy/ssm-deploy.sh"
+            echo "Downloading deploy artifact (\${DOWNLOAD_KIND}): \${ASSET_NAME}"
+            curl -fL "\${ARTIFACT_URL}" -o "\${ASSET_NAME}"
+            tar -xzf "\${ASSET_NAME}" -C "\${WORK_DIR}"
+
+            DEPLOY_SCRIPT_PATH="\${WORK_DIR}/scripts/deploy/ssm-deploy.sh"
+            if [ -f "\${DEPLOY_SCRIPT_PATH}" ]; then
+              true
             else
-              echo "Release asset download failed; falling back to repo archive: \${ARCHIVE_URL}"
-              curl -fL "\${ARCHIVE_URL}" -o source.tar.gz
-              tar -xzf source.tar.gz -C "\${WORK_DIR}"
               src_dir="$(ls -d "\${WORK_DIR}"/*/ | head -n 1 || true)"
               if [ -z "\${src_dir}" ]; then
                 echo "Unable to locate extracted source directory." >&2
@@ -184,7 +255,7 @@ jobs:
 
           jq -n \
             --arg instanceId "${INSTANCE_ID}" \
-            --arg comment "DailyBibleVerseBot production deploy ${release_tag}" \
+            --arg comment "DailyBibleVerseBot production deploy ${RELEASE_TAG}" \
             --arg scriptB64 "${script_b64}" \
             '{
               DocumentName: "AWS-RunShellScript",
@@ -249,5 +320,29 @@ jobs:
           fi
 
           if [ "${status}" != "Success" ] || [ "${wait_exit}" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Cost leak guard (unattached volumes, unassociated EIPs)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          available_volumes="$(aws ec2 describe-volumes \
+            --region "${AWS_REGION}" \
+            --filters "Name=status,Values=available" \
+            --query "Volumes[].VolumeId" \
+            --output text)"
+          if [ -n "${available_volumes}" ] && [ "${available_volumes}" != "None" ]; then
+            echo "Unattached EBS volumes found (status=available): ${available_volumes}" >&2
+            exit 1
+          fi
+
+          unassociated_eips="$(aws ec2 describe-addresses \
+            --region "${AWS_REGION}" \
+            --query "Addresses[?AssociationId==null].AllocationId" \
+            --output text)"
+          if [ -n "${unassociated_eips}" ] && [ "${unassociated_eips}" != "None" ]; then
+            echo "Unassociated Elastic IPs found: ${unassociated_eips}" >&2
             exit 1
           fi

@@ -15,6 +15,7 @@ Then:
   - Starts the canary EC2 instance if stopped
   - Tags it with `CanaryLastPushEpoch` (resets the 4 hour auto-stop timer)
   - Syncs `BOT_TOKEN` from GitHub environment secrets into SSM Parameter Store (SecureString)
+  - Resolves a short-lived signed GitHub download URL for the release asset (so private repos work without putting GitHub tokens on EC2)
   - Runs the deploy via SSM
 
 Auto-stop:
@@ -52,6 +53,7 @@ Common checks:
 - GitHub Actions:
   - Confirm `build.yml` created the expected release tag + asset.
   - Confirm `deploy-canary.yml` / `deploy-prod.yml` captured the SSM command output.
+  - If a deploy fails to resolve the signed download URL for a private release asset, add a classic PAT with `repo` scope as `GH_RELEASE_TOKEN` in the relevant GitHub environment (`canary` / `production`).
 
 - SSM:
   - Look up the printed `CommandId` and inspect the invocation output:
@@ -65,6 +67,13 @@ Common checks:
 - SSM not working:
   - Confirm `amazon-ssm-agent` is running and the instance has its IAM instance profile.
   - Confirm `imds-route.service` is enabled so the instance can reach IMDS for role credentials.
+
+## Cost Leak Guard
+
+Both deploy workflows run a post-deploy check that fails the job if:
+
+- Any EBS volumes exist in `available` (unattached) state.
+- Any Elastic IPs exist that are unassociated.
 
 ## One-Time / Repair Scripts
 
