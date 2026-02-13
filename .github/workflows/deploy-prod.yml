@@ -143,42 +143,42 @@ jobs:
           GITHUB_REPO="${GITHUB_REPO}"
           RELEASE_TAG="${release_tag}"
           GIT_SHA="${GIT_SHA}"
-	          TOKEN_PARAM="${BOT_TOKEN_PARAMETER_NAME}"
+            TOKEN_PARAM="${BOT_TOKEN_PARAMETER_NAME}"
 
-	          ASSET_NAME="daily-bible-verse-bot-\${RELEASE_TAG}.tar.gz"
-	          ARTIFACT_URL="https://github.com/\${GITHUB_REPO}/releases/download/\${RELEASE_TAG}/\${ASSET_NAME}"
-	          ARCHIVE_URL="https://github.com/\${GITHUB_REPO}/archive/refs/tags/\${RELEASE_TAG}.tar.gz"
+            ASSET_NAME="daily-bible-verse-bot-\${RELEASE_TAG}.tar.gz"
+            ARTIFACT_URL="https://github.com/\${GITHUB_REPO}/releases/download/\${RELEASE_TAG}/\${ASSET_NAME}"
+            ARCHIVE_URL="https://github.com/\${GITHUB_REPO}/archive/refs/tags/\${RELEASE_TAG}.tar.gz"
 
-	          WORK_DIR="/tmp/dbv-release"
-	          rm -rf "\${WORK_DIR}"
-	          mkdir -p "\${WORK_DIR}"
-	          cd "\${WORK_DIR}"
+            WORK_DIR="/tmp/dbv-release"
+            rm -rf "\${WORK_DIR}"
+            mkdir -p "\${WORK_DIR}"
+            cd "\${WORK_DIR}"
 
-	          echo "Downloading release asset: \${ARTIFACT_URL}"
-	          if curl -fL "\${ARTIFACT_URL}" -o "\${ASSET_NAME}"; then
-	            tar -xzf "\${ASSET_NAME}" -C "\${WORK_DIR}"
-	            DEPLOY_SCRIPT_PATH="\${WORK_DIR}/scripts/deploy/ssm-deploy.sh"
-	          else
-	            echo "Release asset download failed; falling back to repo archive: \${ARCHIVE_URL}"
-	            curl -fL "\${ARCHIVE_URL}" -o source.tar.gz
-	            tar -xzf source.tar.gz -C "\${WORK_DIR}"
-	            src_dir="$(ls -d "\${WORK_DIR}"/*/ | head -n 1 || true)"
-	            if [ -z "\${src_dir}" ]; then
-	              echo "Unable to locate extracted source directory." >&2
-	              exit 1
-	            fi
-	            DEPLOY_SCRIPT_PATH="\${src_dir}scripts/deploy/ssm-deploy.sh"
-	          fi
+            echo "Downloading release asset: \${ARTIFACT_URL}"
+            if curl -fL "\${ARTIFACT_URL}" -o "\${ASSET_NAME}"; then
+              tar -xzf "\${ASSET_NAME}" -C "\${WORK_DIR}"
+              DEPLOY_SCRIPT_PATH="\${WORK_DIR}/scripts/deploy/ssm-deploy.sh"
+            else
+              echo "Release asset download failed; falling back to repo archive: \${ARCHIVE_URL}"
+              curl -fL "\${ARCHIVE_URL}" -o source.tar.gz
+              tar -xzf source.tar.gz -C "\${WORK_DIR}"
+              src_dir="$(ls -d "\${WORK_DIR}"/*/ | head -n 1 || true)"
+              if [ -z "\${src_dir}" ]; then
+                echo "Unable to locate extracted source directory." >&2
+                exit 1
+              fi
+              DEPLOY_SCRIPT_PATH="\${src_dir}scripts/deploy/ssm-deploy.sh"
+            fi
 
-	          bash "\${DEPLOY_SCRIPT_PATH}" \
-	            --deploy-root "\${DEPLOY_ROOT}" \
-	            --environment "\${ENVIRONMENT}" \
-	            --github-repo "\${GITHUB_REPO}" \
-	            --release-tag "\${RELEASE_TAG}" \
-	            --git-sha "\${GIT_SHA}" \
-	            --token-parameter "\${TOKEN_PARAM}"
-SCRIPT
-	          )"
+            bash "\${DEPLOY_SCRIPT_PATH}" \
+              --deploy-root "\${DEPLOY_ROOT}" \
+              --environment "\${ENVIRONMENT}" \
+              --github-repo "\${GITHUB_REPO}" \
+              --release-tag "\${RELEASE_TAG}" \
+              --git-sha "\${GIT_SHA}" \
+              --token-parameter "\${TOKEN_PARAM}"
+          SCRIPT
+          )"
 
           script_b64="$(printf '%s' "${deploy_script}" | base64 -w0)"
 
