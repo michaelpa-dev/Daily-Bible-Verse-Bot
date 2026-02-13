@@ -447,16 +447,17 @@ if (-not $translationApiUrl) { $translationApiUrl = 'https://bible-api.com/' }
 if (-not $defaultTranslation) { $defaultTranslation = 'web' }
 if (-not $logLevel) { $logLevel = 'debug' }
 
-$sshKeyPath = Join-Path $HOME '.ssh\dbv_github_actions'
+$sshKeyPath = Join-Path $HOME '.ssh\dbv_github_actions_nopass'
 $sshPubKeyPath = "$sshKeyPath.pub"
-if (-not (Test-Path $sshKeyPath) -or -not (Test-Path $sshPubKeyPath)) {
-  if (-not (Test-Path (Split-Path -Parent $sshKeyPath))) {
-    New-Item -Path (Split-Path -Parent $sshKeyPath) -ItemType Directory -Force | Out-Null
-  }
-  $null = Invoke-External -FilePath 'cmd.exe' -Arguments @('/c', 'ssh-keygen', '-t', 'ed25519', '-f', $sshKeyPath, '-C', 'github-actions-deploy', '-N', '""')
+if (-not (Test-Path (Split-Path -Parent $sshKeyPath))) {
+  New-Item -Path (Split-Path -Parent $sshKeyPath) -ItemType Directory -Force | Out-Null
 }
+# Always (re)generate the deploy key without a passphrase so GitHub Actions can use it non-interactively.
+if (Test-Path $sshKeyPath) { Remove-Item -Force $sshKeyPath }
+if (Test-Path $sshPubKeyPath) { Remove-Item -Force $sshPubKeyPath }
+$null = Invoke-External -FilePath 'cmd.exe' -Arguments @('/c', 'ssh-keygen', '-t', 'ed25519', '-f', $sshKeyPath, '-C', 'github-actions-deploy', '-N', '""')
 
-$keyPairName = 'daily-bible-verse-gha'
+$keyPairName = 'daily-bible-verse-gha-nopass'
 Ensure-KeyPair -AwsCliPath $awsCli -Profile $awsProfile -Region $region -KeyName $keyPairName -PublicKeyPath $sshPubKeyPath
 $deploySshKey = (Get-Content $sshKeyPath -Raw).Trim()
 
