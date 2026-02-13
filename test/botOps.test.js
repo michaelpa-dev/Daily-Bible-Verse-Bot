@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildBootstrapSummaryMessage,
+  buildIssueCreationUrl,
   truncateText,
 } = require('../js/services/botOps.js');
 
@@ -24,4 +25,22 @@ test('buildBootstrapSummaryMessage includes counts and sections', () => {
   assert.match(output, /Updated: 1/);
   assert.match(output, /Warnings: 1/);
   assert.match(output, /Role: Maintainer/);
+});
+
+test('buildIssueCreationUrl returns a GitHub issue link with prefilled fields', () => {
+  const issueUrl = buildIssueCreationUrl({
+    context: 'command',
+    commandName: '/subscribe',
+    userTag: 'tester (123)',
+    errorSummary: 'something failed',
+    stackSnippet: 'Error: stack',
+  });
+
+  assert.match(issueUrl, /github\.com/);
+  assert.match(issueUrl, /issues\/new/);
+
+  const parsed = new URL(issueUrl);
+  assert.equal(parsed.searchParams.get('labels'), 'bug');
+  assert.match(parsed.searchParams.get('title') || '', /Bot Error/);
+  assert.match(parsed.searchParams.get('body') || '', /Error context/);
 });
