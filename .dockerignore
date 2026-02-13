@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+node_modules
+npm-debug.log
+logs
+db
+cfg/config.json
+test
+docs
+scripts
+*.md

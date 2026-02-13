@@ -1,0 +1,15 @@
+services:
+  bot:
+    container_name: daily-bible-verse-bot
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      GIT_SHA: ${GIT_SHA:-unknown}
+    volumes:
+      - ./db:/app/db
+      - ./logs:/app/logs

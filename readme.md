@@ -44,10 +44,11 @@ This repo includes GitHub Actions deployment automation in `.github/workflows/de
 - Trigger: push to `master` (and manual `workflow_dispatch`).
 - Flow:
   1. Run tests (`npm ci` + `npm test`)
-  2. SSH to your deployment host
-  3. Pull latest `master`
-  4. Install production dependencies (`npm ci --omit=dev`)
-  5. Reload bot with PM2 (`pm2 reload "Daily Bible Verse Bot" --update-env`)
+  2. Send Discord notification that deploy started (optional)
+  3. SSH to your Lightsail host
+  4. Pull latest `master`
+  5. Build and restart the Docker service (`docker compose -f docker-compose.prod.yml up -d --build`)
+  6. Send Discord success/failure notification (optional)
 
 Configure the following repository secrets in GitHub:
 
@@ -56,12 +57,33 @@ Configure the following repository secrets in GitHub:
 - `DEPLOY_USER`: SSH username
 - `DEPLOY_PATH`: absolute path to repo on the server
 - `DEPLOY_PORT`: optional SSH port (defaults to `22`)
+- `DISCORD_DEPLOY_WEBHOOK_URL`: optional Discord webhook URL for deploy notifications
 
-Server prerequisites:
+Lightsail host prerequisites:
 
-- `git`, `node`, `npm`, and `pm2` installed on the server
-- the bot repository already cloned to `DEPLOY_PATH`
-- bot runtime secrets configured on the server (for example `BOT_TOKEN`)
+- `git` and Docker installed
+- Docker Compose plugin (`docker compose`) or `docker-compose` installed
+- repo present at `DEPLOY_PATH` (workflow can auto-clone if missing)
+- runtime `.env` file exists at `${DEPLOY_PATH}/.env` with bot secrets
+
+### Lightsail + Docker setup checklist
+
+1. Create a Linux Lightsail instance (Ubuntu recommended).
+2. Install Docker and Docker Compose plugin on the instance.
+3. Clone this repository into your chosen deploy path:
+   - `git clone https://github.com/<your-org-or-user>/Daily-Bible-Verse-Bot.git <DEPLOY_PATH>`
+4. Create `${DEPLOY_PATH}/.env` with required runtime values, for example:
+   - `BOT_TOKEN=...`
+   - `BIBLE_API_URL=https://labs.bible.org/api/?type=json&passage=`
+   - `TRANSLATION_API_URL=https://bible-api.com/`
+   - `DEFAULT_TRANSLATION=web`
+   - `LOG_LEVEL=debug`
+5. Ensure SSH access for GitHub Actions using the private key you store in `DEPLOY_SSH_KEY`.
+6. Add the GitHub repository secrets listed above.
+7. Push to `master` and verify:
+   - Actions run succeeds
+   - container is running: `docker compose -f docker-compose.prod.yml ps`
+   - Discord deploy notifications appear (if webhook configured)
 
 ## Slash Commands
 
