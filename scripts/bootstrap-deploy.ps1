@@ -452,10 +452,10 @@ $sshPubKeyPath = "$sshKeyPath.pub"
 if (-not (Test-Path (Split-Path -Parent $sshKeyPath))) {
   New-Item -Path (Split-Path -Parent $sshKeyPath) -ItemType Directory -Force | Out-Null
 }
-# Always (re)generate the deploy key without a passphrase so GitHub Actions can use it non-interactively.
-if (Test-Path $sshKeyPath) { Remove-Item -Force $sshKeyPath }
-if (Test-Path $sshPubKeyPath) { Remove-Item -Force $sshPubKeyPath }
-$null = Invoke-External -FilePath 'cmd.exe' -Arguments @('/c', 'ssh-keygen', '-t', 'ed25519', '-f', $sshKeyPath, '-C', 'github-actions-deploy', '-N', '""')
+if (-not (Test-Path $sshKeyPath) -or -not (Test-Path $sshPubKeyPath)) {
+  # Create the deploy key without a passphrase so GitHub Actions can use it non-interactively.
+  $null = Invoke-External -FilePath 'cmd.exe' -Arguments @('/c', 'ssh-keygen', '-t', 'ed25519', '-f', $sshKeyPath, '-C', 'github-actions-deploy', '-N', '""')
+}
 
 $keyPairName = 'daily-bible-verse-gha-nopass'
 Ensure-KeyPair -AwsCliPath $awsCli -Profile $awsProfile -Region $region -KeyName $keyPairName -PublicKeyPath $sshPubKeyPath
@@ -477,23 +477,36 @@ function Write-UserData {
   param([string]$EnvironmentName)
 
   $userDataPath = Join-Path $env:TEMP "dbv-user-data-$EnvironmentName.sh"
-  @"
-#!/bin/bash
-set -euxo pipefail
-dnf update -y
-dnf install -y docker git
-systemctl enable docker
-systemctl start docker
-usermod -aG docker ec2-user || true
-install -d -o ec2-user -g ec2-user /opt/daily-bible-verse-bot/db /opt/daily-bible-verse-bot/logs/archive
-cat >/opt/daily-bible-verse-bot/.env <<'EOF'
-BIBLE_API_URL=$bibleApiUrl
-TRANSLATION_API_URL=$translationApiUrl
-DEFAULT_TRANSLATION=$defaultTranslation
-LOG_LEVEL=$logLevel
-EOF
-chown ec2-user:ec2-user /opt/daily-bible-verse-bot/.env
-"@ | Set-Content -Path $userDataPath -Encoding utf8
+  $userDataContent = @(
+    '#!/bin/bash'
+    'set -euxo pipefail'
+    'dnf update -y'
+    'dnf install -y docker git'
+    'systemctl enable docker'
+    'systemctl start docker'
+    'usermod -aG docker ec2-user || true'
+    'mkdir -p /opt/daily-bible-verse-bot'
+    'chown -R ec2-user:ec2-user /opt/daily-bible-verse-bot'
+    'mkdir -p /opt/daily-bible-verse-bot/db /opt/daily-bible-verse-bot/logs/archive'
+    'if ! command -v docker-compose >/dev/null 2>&1; then'
+    '  curl -fsSL https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose'
+    '  chmod +x /usr/local/bin/docker-compose'
+    'fi'
+    "cat >/opt/daily-bible-verse-bot/.env <<'EOF'"
+    "BIBLE_API_URL=$bibleApiUrl"
+    "TRANSLATION_API_URL=$translationApiUrl"
+    "DEFAULT_TRANSLATION=$defaultTranslation"
+    "LOG_LEVEL=$logLevel"
+    'EOF'
+    'chown ec2-user:ec2-user /opt/daily-bible-verse-bot/.env'
+  ) -join "`n"
+
+  # EC2 user-data must not include a UTF-8 BOM, and LF newlines are safest for bash/cloud-init.
+  [System.IO.File]::WriteAllText(
+    $userDataPath,
+    $userDataContent,
+    (New-Object System.Text.UTF8Encoding($false))
+  )
 
   return $userDataPath
 }
