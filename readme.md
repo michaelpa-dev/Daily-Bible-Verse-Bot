@@ -37,6 +37,32 @@ Environment variables are preferred for secrets and CI/CD deployments:
 - Run tests:
   - `npm test`
 
+## Automatic Deployment Pipeline
+
+This repo includes GitHub Actions deployment automation in `.github/workflows/deploy.yml`.
+
+- Trigger: push to `master` (and manual `workflow_dispatch`).
+- Flow:
+  1. Run tests (`npm ci` + `npm test`)
+  2. SSH to your deployment host
+  3. Pull latest `master`
+  4. Install production dependencies (`npm ci --omit=dev`)
+  5. Reload bot with PM2 (`pm2 reload "Daily Bible Verse Bot" --update-env`)
+
+Configure the following repository secrets in GitHub:
+
+- `DEPLOY_SSH_KEY`: private SSH key used by GitHub Actions
+- `DEPLOY_HOST`: server hostname or IP
+- `DEPLOY_USER`: SSH username
+- `DEPLOY_PATH`: absolute path to repo on the server
+- `DEPLOY_PORT`: optional SSH port (defaults to `22`)
+
+Server prerequisites:
+
+- `git`, `node`, `npm`, and `pm2` installed on the server
+- the bot repository already cloned to `DEPLOY_PATH`
+- bot runtime secrets configured on the server (for example `BOT_TOKEN`)
+
 ## Slash Commands
 
 - `/subscribe`
