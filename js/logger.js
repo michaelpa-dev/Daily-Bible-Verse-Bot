@@ -9,7 +9,7 @@ const archiveDirectory = path.join(logsDirectory, 'archive');
 const isTestEnvironment =
   process.env.NODE_ENV === 'test' ||
   process.argv.includes('--test') ||
-  Boolean(process.env.DB_PATH);
+  Boolean(process.env.LOG_TO_CONSOLE_ONLY);
 
 fs.mkdirSync(logsDirectory, { recursive: true });
 fs.mkdirSync(archiveDirectory, { recursive: true });
