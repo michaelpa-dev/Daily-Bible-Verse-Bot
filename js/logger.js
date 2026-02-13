@@ -1,82 +1,100 @@
 const log4js = require('log4js');
 const path = require('path');
 const fs = require('fs');
-const { format } = require('date-fns-tz'); // Import date-fns-tz library
+const { logLevel } = require('./config.js');
 
-// Get the directory of the script
-const scriptDirectory = path.dirname(require.main.filename);
+const scriptDirectory = __dirname;
+const logsDirectory = path.join(scriptDirectory, '../logs');
+const archiveDirectory = path.join(logsDirectory, 'archive');
+const isTestEnvironment =
+  process.env.NODE_ENV === 'test' ||
+  process.argv.includes('--test') ||
+  Boolean(process.env.DB_PATH);
 
-// Set the desired timezone to Eastern Standard Time (EST)
-const EST_TIMEZONE = 'America/New_York';
+fs.mkdirSync(logsDirectory, { recursive: true });
+fs.mkdirSync(archiveDirectory, { recursive: true });
+
+const appenders = isTestEnvironment
+  ? {
+      console: {
+        type: 'console',
+      },
+    }
+  : {
+      file: {
+        type: 'file',
+        filename: path.join(logsDirectory, 'bot.log'),
+        maxLogSize: 10485760,
+        backups: 3,
+        compress: true,
+        layout: {
+          type: 'pattern',
+          pattern: '[%d{yyyy-MM-dd hh:mm:ss.SSSO}] [%p] %c - %m',
+        },
+      },
+      console: {
+        type: 'console',
+      },
+    };
+
+const categoryConfig = isTestEnvironment
+  ? {
+      appenders: ['console'],
+      level: 'error',
+    }
+  : {
+      appenders: ['file', 'console'],
+      level: logLevel,
+    };
 
 // Configure logging with a custom layout
 log4js.configure({
-  appenders: {
-    file: {
-      type: 'file',
-      filename: path.join(scriptDirectory, '../logs', 'bot.log'),
-      maxLogSize: 10485760,
-      backups: 3,
-      compress: true,
-      layout: {
-        type: 'pattern',
-        pattern: '[%d{yyyy-MM-dd hh:mm:ss.SSSO}] [%p] %c - %m',
-      },
-    },
-    console: {
-      type: 'console',
-    },
-  },
+  appenders,
   categories: {
-    default: {
-      appenders: ['file', 'console'],
-      level: 'debug',
-    },
+    default: categoryConfig,
   },
 });
 
 // Create and export a logger
 const logger = log4js.getLogger('default');
 
-// Function to handle exit gracefully
+let hasArchivedLogs = false;
+
 const handleExit = () => {
+  if (hasArchivedLogs) {
+    return;
+  }
+
+  hasArchivedLogs = true;
   logger.debug('Attempting to archive log file');
-  const logPath = path.join(scriptDirectory, '../logs', 'bot.log');
-  const archivePath = path.join(
-    scriptDirectory,
-    '../logs/archive',
-    `bot_${Date.now()}.log`
-  );
+  const logPath = path.join(logsDirectory, 'bot.log');
 
-  // Rename the log file to archive it
-  fs.renameSync(logPath, archivePath);
+  try {
+    if (fs.existsSync(logPath)) {
+      const archivePath = path.join(archiveDirectory, `bot_${Date.now()}.log`);
+      fs.renameSync(logPath, archivePath);
+    }
 
-  // Delete old log files (keep the 5 most recent)
-  const archiveFiles = fs
-    .readdirSync(path.join(scriptDirectory, '../logs/archive'))
-    .filter((file) => file.startsWith('bot_'))
-    .sort(
-      (a, b) =>
-        b.split('_')[1].split('.')[0] - a.split('_')[1].split('.')[0]
-    );
+    const archiveFiles = fs
+      .readdirSync(archiveDirectory)
+      .filter((file) => file.startsWith('bot_'))
+      .sort(
+        (a, b) =>
+          Number(b.split('_')[1].split('.')[0]) - Number(a.split('_')[1].split('.')[0])
+      );
 
-  // Delete all but the 5 most recent log files
-  for (let i = 5; i < archiveFiles.length; i++) {
-    fs.unlinkSync(
-      path.join(scriptDirectory, '../logs/archive', archiveFiles[i])
-    );
+    for (let i = 5; i < archiveFiles.length; i += 1) {
+      fs.unlinkSync(path.join(archiveDirectory, archiveFiles[i]));
+    }
+  } catch (error) {
+    logger.warn(`Failed to archive log file on exit: ${error}`);
   }
 };
 
-// Handle SIGINT (Ctrl+C) gracefully
-process.on('SIGINT', () => {
-  handleExit();
-  process.exit();
-});
-
-// Handle process exit event
 process.on('exit', () => {
-  handleExit();
+  if (!isTestEnvironment) {
+    handleExit();
+  }
 });
 
 module.exports = { logger, scriptDirectory };

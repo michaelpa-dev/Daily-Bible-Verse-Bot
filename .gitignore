@@ -6,3 +6,4 @@ node_modules
 /logs/archive/applicationExit*
 /db/stats.json
 /db/subscribed_users.json
+.vscode
