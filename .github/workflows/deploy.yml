@@ -188,14 +188,19 @@ jobs:
 
           ssh -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" "
             set -euo pipefail
-            if [ ! -d \"${DEPLOY_PATH}/.git\" ]; then
-              git clone \"https://github.com/${REPOSITORY}.git\" \"${DEPLOY_PATH}\"
+            mkdir -p \"${DEPLOY_PATH}\"
+            cd \"${DEPLOY_PATH}\"
+            if [ ! -d .git ]; then
+              git init
+              if git remote get-url origin >/dev/null 2>&1; then
+                git remote set-url origin \"https://github.com/${REPOSITORY}.git\"
+              else
+                git remote add origin \"https://github.com/${REPOSITORY}.git\"
+              fi
             fi
 
-            cd \"${DEPLOY_PATH}\"
             git fetch origin \"${DEPLOY_GIT_REF}\" --prune
-            git checkout \"${DEPLOY_GIT_REF}\"
-            git pull --ff-only origin \"${DEPLOY_GIT_REF}\"
+            git checkout -B \"${DEPLOY_GIT_REF}\" \"origin/${DEPLOY_GIT_REF}\"
             mkdir -p db logs logs/archive
 
             if [ ! -f .env ]; then
