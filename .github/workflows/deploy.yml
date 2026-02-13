@@ -18,7 +18,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: deploy-${{ github.workflow }}-${{ github.ref }}
@@ -103,9 +102,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          BOT_TOKEN_PARAMETER_NAME: ${{ secrets.BOT_TOKEN_PARAMETER_NAME }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: |
           set -euo pipefail
           missing=()
@@ -114,9 +111,7 @@ jobs:
           [ -n "${DEPLOY_USER}" ] || missing+=("DEPLOY_USER")
           [ -n "${DEPLOY_PATH}" ] || missing+=("DEPLOY_PATH")
           [ -n "${DEPLOY_SSH_KEY}" ] || missing+=("DEPLOY_SSH_KEY")
-          [ -n "${AWS_REGION}" ] || missing+=("AWS_REGION")
-          [ -n "${AWS_DEPLOY_ROLE_ARN}" ] || missing+=("AWS_DEPLOY_ROLE_ARN")
-          [ -n "${BOT_TOKEN_PARAMETER_NAME}" ] || missing+=("BOT_TOKEN_PARAMETER_NAME")
+          [ -n "${BOT_TOKEN}" ] || missing+=("BOT_TOKEN")
 
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "Missing one or more required secrets: ${missing[*]}"
@@ -158,28 +153,6 @@ jobs:
           urllib.request.urlopen(request).read()
           PY
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-
-      - name: Fetch BOT_TOKEN from SSM Parameter Store
-        env:
-          BOT_TOKEN_PARAMETER_NAME: ${{ secrets.BOT_TOKEN_PARAMETER_NAME }}
-        run: |
-          set -euo pipefail
-          BOT_TOKEN="$(aws ssm get-parameter --name "${BOT_TOKEN_PARAMETER_NAME}" --with-decryption --query 'Parameter.Value' --output text)"
-          if [ -z "${BOT_TOKEN}" ]; then
-            echo "BOT_TOKEN parameter resolved to an empty value"
-            exit 1
-          fi
-
-          BOT_TOKEN_B64="$(printf '%s' "${BOT_TOKEN}" | base64 | tr -d '\n')"
-          echo "::add-mask::${BOT_TOKEN}"
-          echo "::add-mask::${BOT_TOKEN_B64}"
-          echo "BOT_TOKEN_B64=${BOT_TOKEN_B64}" >> "$GITHUB_ENV"
-
       - name: Setup SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -205,10 +178,13 @@ jobs:
           DEPLOY_GIT_REF: ${{ needs.resolve-target.outputs.git_ref }}
           DEPLOY_ENVIRONMENT: ${{ needs.resolve-target.outputs.environment }}
           GIT_SHA: ${{ github.sha }}
-          BOT_TOKEN_B64: ${{ env.BOT_TOKEN_B64 }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: |
           set -euo pipefail
           PORT="${DEPLOY_PORT:-22}"
+          BOT_TOKEN_B64="$(printf '%s' "${BOT_TOKEN}" | base64 | tr -d '\n')"
+          echo "::add-mask::${BOT_TOKEN}"
+          echo "::add-mask::${BOT_TOKEN_B64}"
 
           ssh -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" "
             set -euo pipefail
@@ -236,7 +212,7 @@ jobs:
               exit 1
             fi
 
-            BOT_TOKEN=\"\$(printf '%s' \"${BOT_TOKEN_B64}\" | base64 -d)\"
+            BOT_TOKEN=\"\$(printf '%s' '${BOT_TOKEN_B64}' | base64 -d)\"
             export BOT_TOKEN
             export DEPLOY_ENVIRONMENT=\"${DEPLOY_ENVIRONMENT}\"
             export GIT_SHA=\"${GIT_SHA}\"

@@ -30,7 +30,7 @@ Environment variables are preferred for secrets and CI/CD deployments:
 - `LOG_LEVEL` (optional override)
 - `GIT_SHA` or `COMMIT_SHA` (optional, used by `/version` and `/health`)
 
-For managed deployments (`production` / `canary`), the deployment workflow expects `BOT_TOKEN` to be sourced from AWS SSM Parameter Store and injected at deploy time.
+For managed deployments (`production` / `canary`), set `BOT_TOKEN` in GitHub environment secrets.
 
 ## Usage
 
@@ -51,11 +51,9 @@ This repo includes GitHub Actions deployment automation in `.github/workflows/de
   1. Run tests (`npm ci` + `npm test`)
   2. Resolve deploy target environment (`production` or `canary`)
   3. Send Discord notification that deploy started (optional)
-  4. Assume AWS role with GitHub OIDC
-  5. Read `BOT_TOKEN` from AWS SSM Parameter Store (`SecureString`)
-  6. SSH to the Lightsail host for that environment
-  7. Pull latest target branch and restart Docker (`docker compose -f docker-compose.prod.yml up -d --build`)
-  8. Send Discord success/failure notification (optional)
+  4. SSH to the EC2 host for that environment
+  5. Pull latest target branch and restart Docker (`docker compose -f docker-compose.prod.yml up -d --build`)
+  6. Send Discord success/failure notification (optional)
 
 ### GitHub Environments and secrets
 
@@ -71,37 +69,19 @@ Add these secrets in each environment (values differ per environment):
 - `DEPLOY_USER`: SSH username
 - `DEPLOY_PATH`: absolute path to repo on the server
 - `DEPLOY_PORT`: optional SSH port (defaults to `22`)
-- `AWS_REGION`: AWS region for Parameter Store
-- `AWS_DEPLOY_ROLE_ARN`: IAM role ARN assumed via OIDC
-- `BOT_TOKEN_PARAMETER_NAME`: SSM parameter name storing the bot token
+- `BOT_TOKEN`: bot token for that environment
 - `DISCORD_DEPLOY_WEBHOOK_URL`: optional Discord webhook URL for deploy notifications
 
-### AWS SSM Parameter Store
-
-Store each token as `SecureString`:
-
-- production token parameter: `/daily-bible-verse/prod/BOT_TOKEN`
-- canary token parameter: `/daily-bible-verse/canary/BOT_TOKEN`
-
-Set `BOT_TOKEN_PARAMETER_NAME` in each GitHub environment to the matching path above.
-
-### IAM permissions for deploy role
-
-The role referenced by `AWS_DEPLOY_ROLE_ARN` should allow only what is needed:
-
-- `ssm:GetParameter` on your bot-token parameter ARN(s)
-- `kms:Decrypt` if a customer-managed KMS key is used for the parameter
-
-Lightsail host prerequisites:
+EC2 host prerequisites:
 
 - `git` and Docker installed
 - Docker Compose plugin (`docker compose`) or `docker-compose` installed
 - repo present at `DEPLOY_PATH` (workflow can auto-clone if missing)
 - runtime `.env` file exists at `${DEPLOY_PATH}/.env` for non-token settings (`BIBLE_API_URL`, `TRANSLATION_API_URL`, `DEFAULT_TRANSLATION`, etc.)
 
-### Lightsail + Docker setup checklist
+### EC2 + Docker setup checklist
 
-1. Create a Linux Lightsail instance (Ubuntu recommended).
+1. Create Linux EC2 instances for `production` and `canary`.
 2. Install Docker and Docker Compose plugin on the instance.
 3. Clone this repository into your chosen deploy path:
    - `git clone https://github.com/<your-org-or-user>/Daily-Bible-Verse-Bot.git <DEPLOY_PATH>`
@@ -110,11 +90,9 @@ Lightsail host prerequisites:
    - `TRANSLATION_API_URL=https://bible-api.com/`
    - `DEFAULT_TRANSLATION=web`
    - `LOG_LEVEL=debug`
-5. Create SSM `SecureString` parameters for production and canary bot tokens.
-6. Configure GitHub OIDC role trust + permissions for SSM reads.
-7. Ensure SSH access for GitHub Actions using the private key you store in `DEPLOY_SSH_KEY`.
-8. Add the GitHub environment secrets listed above for both `production` and `canary`.
-9. Push to `master` (production) or `canary` (canary) and verify:
+5. Ensure SSH access for GitHub Actions using the private key you store in `DEPLOY_SSH_KEY`.
+6. Add the GitHub environment secrets listed above for both `production` and `canary`.
+7. Push to `master` (production) or `canary` (canary) and verify:
    - Actions run succeeds
    - container is running: `docker compose -f docker-compose.prod.yml ps`
    - Discord deploy notifications appear (if webhook configured)
