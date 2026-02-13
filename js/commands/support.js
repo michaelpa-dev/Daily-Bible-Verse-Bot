@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { version } = require('../config.js');
+const { issueTrackerUrl, version } = require('../config.js');
 const { addCommandExecution } = require('../db/statsDB.js');
 
 module.exports = {
@@ -14,7 +14,7 @@ module.exports = {
       .setColor('#FF0000')
       .setTimestamp()
       .setDescription(
-        'If you need support, found a bug, or want to make a feature request, please open an issue at: https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot/issues'
+        `If you need support, found a bug, or want to make a feature request, please open an issue at: ${issueTrackerUrl}`
       )
       .setFooter({ text: `Bot Version: ${version}` })
       .setThumbnail(interaction.client.user.displayAvatarURL());
