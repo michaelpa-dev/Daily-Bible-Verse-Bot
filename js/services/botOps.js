@@ -3,12 +3,15 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 const { getBuildInfo } = require('./buildInfo.js');
+const { issueTrackerUrl } = require('../config.js');
 const {
   CHANNEL_NAMES,
   TARGET_DEV_GUILD_ID,
 } = require('../constants/devServerSpec.js');
 
 const BOT_STATUS_MARKER = '[dbvb-status-message]';
+const DEFAULT_ISSUE_TRACKER_URL =
+  'https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot/issues/new';
 
 function formatDuration(milliseconds) {
   const totalSeconds = Math.floor(milliseconds / 1000);
@@ -30,6 +33,50 @@ function truncateText(value, maxLength = 1200) {
   }
 
   return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function normalizeIssueTrackerUrl(rawUrl) {
+  const candidate = rawUrl || DEFAULT_ISSUE_TRACKER_URL;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.pathname.endsWith('/issues')) {
+      parsed.pathname = `${parsed.pathname}/new`;
+    }
+    return parsed.toString();
+  } catch (error) {
+    return DEFAULT_ISSUE_TRACKER_URL;
+  }
+}
+
+function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, stackSnippet }) {
+  const baseUrl = normalizeIssueTrackerUrl(issueTrackerUrl);
+  const issueUrl = new URL(baseUrl);
+  const title = truncateText(
+    `[Bot Error] ${context || 'runtime'} - ${commandName || 'N/A'}`,
+    120
+  );
+  const body = [
+    '### Error context',
+    `- Context: ${context || 'runtime'}`,
+    `- Command: ${commandName || 'N/A'}`,
+    `- User: ${userTag || 'N/A'}`,
+    `- Timestamp (UTC): ${new Date().toISOString()}`,
+    '',
+    '### Summary',
+    truncateText(errorSummary || 'Unknown error', 600),
+    '',
+    '### Stack snippet',
+    '```',
+    truncateText(stackSnippet || 'No stack available', 700),
+    '```',
+    '',
+    '_Created from Discord #bot-logs._',
+  ].join('\n');
+
+  issueUrl.searchParams.set('title', title);
+  issueUrl.searchParams.set('body', body);
+  issueUrl.searchParams.set('labels', 'bug');
+  return issueUrl.toString();
 }
 
 function getGuildFromClient(client, guildId = TARGET_DEV_GUILD_ID) {
@@ -133,6 +180,13 @@ async function upsertBotStatusMessage(client, guildId = TARGET_DEV_GUILD_ID) {
 function buildErrorLogPayload({ context, userTag, commandName, error }) {
   const errorSummary = truncateText(error?.message || String(error), 400);
   const stackSnippet = truncateText(error?.stack || 'No stack available', 900);
+  const issueCreationUrl = buildIssueCreationUrl({
+    context,
+    commandName,
+    userTag,
+    errorSummary,
+    stackSnippet,
+  });
 
   const embed = new EmbedBuilder()
     .setTitle('Bot Error Event')
@@ -143,7 +197,8 @@ function buildErrorLogPayload({ context, userTag, commandName, error }) {
       { name: 'Command', value: commandName || 'N/A', inline: true },
       { name: 'User', value: userTag || 'N/A', inline: true },
       { name: 'Summary', value: errorSummary || 'Unknown error' },
-      { name: 'Stack', value: `\`\`\`\n${stackSnippet}\n\`\`\`` }
+      { name: 'Stack', value: `\`\`\`\n${stackSnippet}\n\`\`\`` },
+      { name: 'Issue', value: `[Create GitHub issue](${issueCreationUrl})` }
     );
 
   return { embeds: [embed] };
@@ -224,6 +279,7 @@ function buildBootstrapSummaryMessage(mode, report) {
 module.exports = {
   BOT_STATUS_MARKER,
   buildBootstrapSummaryMessage,
+  buildIssueCreationUrl,
   buildHealthEmbed,
   findTextChannelByName,
   formatDuration,

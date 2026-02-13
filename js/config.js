@@ -48,6 +48,10 @@ module.exports = {
     'https://labs.bible.org/api/?type=json&passage='
   ),
   translationApiUrl: pickConfigValue('translationApiUrl', 'https://bible-api.com/'),
+  issueTrackerUrl: pickConfigValue(
+    'issueTrackerUrl',
+    'https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot/issues/new'
+  ),
   version: pickConfigValue('version', '0.1.1'),
   defaultTranslation: String(
     pickConfigValue('defaultTranslation', DEFAULT_TRANSLATION)
