@@ -10,6 +10,7 @@ const {
 } = require('../constants/devServerSpec.js');
 
 const BOT_STATUS_MARKER = '[dbvb-status-message]';
+const BOT_STATUS_TITLE = 'Daily Bible Verse Bot Status';
 const DEFAULT_ISSUE_TRACKER_URL =
   'https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot/issues/new';
 
@@ -138,17 +139,20 @@ function buildHealthEmbed(client) {
     );
 }
 
-function buildBotStatusMessage(client) {
+function buildBotStatusEmbed(client) {
   const buildInfo = getBuildInfo();
-  return [
-    BOT_STATUS_MARKER,
-    '**Daily Bible Verse Bot Status**',
-    `- Status: Online`,
-    `- Uptime: ${formatDuration(client.uptime || 0)}`,
-    `- Version: ${buildInfo.version}`,
-    `- Git SHA: ${buildInfo.gitSha}`,
-    `- Last Update: <t:${Math.floor(Date.now() / 1000)}:F>`,
-  ].join('\n');
+  return new EmbedBuilder()
+    .setTitle(BOT_STATUS_TITLE)
+    .setColor('#1f8b4c')
+    .setTimestamp()
+    .setFooter({ text: BOT_STATUS_MARKER })
+    .addFields(
+      { name: 'Status', value: 'Online', inline: true },
+      { name: 'Uptime', value: formatDuration(client.uptime || 0), inline: true },
+      { name: 'Version', value: buildInfo.version, inline: true },
+      { name: 'Git SHA', value: buildInfo.gitSha, inline: true },
+      { name: 'Last Update', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+    );
 }
 
 async function upsertBotStatusMessage(client, guildId = TARGET_DEV_GUILD_ID) {
@@ -161,20 +165,24 @@ async function upsertBotStatusMessage(client, guildId = TARGET_DEV_GUILD_ID) {
   const existingMessage =
     messages.find(
       (message) =>
-        message.author.id === client.user.id &&
-        message.content.includes(BOT_STATUS_MARKER)
+        message.author.id === client.user.id && (
+          message.content.includes(BOT_STATUS_MARKER) ||
+          message.embeds.some((embed) =>
+            embed.title === BOT_STATUS_TITLE ||
+            embed.footer?.text === BOT_STATUS_MARKER
+          )
+        )
     ) || null;
 
-  const nextContent = buildBotStatusMessage(client);
+  const nextEmbed = buildBotStatusEmbed(client);
   if (!existingMessage) {
-    return statusChannel.send({ content: nextContent });
+    return statusChannel.send({ embeds: [nextEmbed] });
   }
 
-  if (existingMessage.content !== nextContent) {
-    return existingMessage.edit({ content: nextContent });
-  }
-
-  return existingMessage;
+  return existingMessage.edit({
+    content: '',
+    embeds: [nextEmbed],
+  });
 }
 
 function buildErrorLogPayload({ context, userTag, commandName, error }) {
@@ -278,6 +286,8 @@ function buildBootstrapSummaryMessage(mode, report) {
 
 module.exports = {
   BOT_STATUS_MARKER,
+  BOT_STATUS_TITLE,
+  buildBotStatusEmbed,
   buildBootstrapSummaryMessage,
   buildIssueCreationUrl,
   buildHealthEmbed,

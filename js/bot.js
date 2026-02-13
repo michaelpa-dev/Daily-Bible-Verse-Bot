@@ -22,7 +22,7 @@ const {
 } = require('./services/botOps.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
-const BOT_STATUS_SCHEDULE = '*/30 * * * *';
+const BOT_STATUS_SCHEDULE = '*/5 * * * * *';
 const DAILY_VERSE_SCHEDULE = '0 9 * * *';
 const DEFAULT_STATUS = 'the Word of God';
 const DELIVERY_CONCURRENCY = 5;
