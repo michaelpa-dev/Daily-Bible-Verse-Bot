@@ -4,13 +4,24 @@ on:
   push:
     branches:
       - master
+      - canary
   workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Deployment target environment
+        required: true
+        type: choice
+        default: canary
+        options:
+          - canary
+          - production
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
-  group: deploy-production
+  group: deploy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -33,11 +44,58 @@ jobs:
       - name: Run tests
         run: npm test
 
-  deploy:
-    name: Deploy (Lightsail Docker)
+  resolve-target:
+    name: Resolve deployment target
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/master'
+    outputs:
+      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
+      environment: ${{ steps.resolve.outputs.environment }}
+      git_ref: ${{ steps.resolve.outputs.git_ref }}
+    steps:
+      - name: Resolve
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          INPUT_TARGET_ENVIRONMENT: ${{ github.event.inputs.target_environment }}
+        run: |
+          set -euo pipefail
+
+          should_deploy=false
+          environment=""
+          git_ref=""
+
+          if [ "${EVENT_NAME}" = "push" ]; then
+            if [ "${GIT_REF}" = "refs/heads/master" ]; then
+              should_deploy=true
+              environment="production"
+              git_ref="master"
+            elif [ "${GIT_REF}" = "refs/heads/canary" ]; then
+              should_deploy=true
+              environment="canary"
+              git_ref="canary"
+            fi
+          elif [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            should_deploy=true
+            environment="${INPUT_TARGET_ENVIRONMENT}"
+            if [ "${environment}" = "production" ]; then
+              git_ref="master"
+            else
+              git_ref="canary"
+            fi
+          fi
+
+          echo "should_deploy=${should_deploy}" >> "$GITHUB_OUTPUT"
+          echo "environment=${environment}" >> "$GITHUB_OUTPUT"
+          echo "git_ref=${git_ref}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy (${{ needs.resolve-target.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: resolve-target
+    if: needs.resolve-target.outputs.should_deploy == 'true'
+    environment: ${{ needs.resolve-target.outputs.environment }}
     steps:
       - name: Validate required deployment secrets
         env:
@@ -45,18 +103,33 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          BOT_TOKEN_PARAMETER_NAME: ${{ secrets.BOT_TOKEN_PARAMETER_NAME }}
         run: |
           set -euo pipefail
-          if [ -z "${DEPLOY_HOST}" ] || [ -z "${DEPLOY_USER}" ] || [ -z "${DEPLOY_PATH}" ] || [ -z "${DEPLOY_SSH_KEY}" ]; then
-            echo "Missing one or more required secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PATH, DEPLOY_SSH_KEY"
+          missing=()
+
+          [ -n "${DEPLOY_HOST}" ] || missing+=("DEPLOY_HOST")
+          [ -n "${DEPLOY_USER}" ] || missing+=("DEPLOY_USER")
+          [ -n "${DEPLOY_PATH}" ] || missing+=("DEPLOY_PATH")
+          [ -n "${DEPLOY_SSH_KEY}" ] || missing+=("DEPLOY_SSH_KEY")
+          [ -n "${AWS_REGION}" ] || missing+=("AWS_REGION")
+          [ -n "${AWS_DEPLOY_ROLE_ARN}" ] || missing+=("AWS_DEPLOY_ROLE_ARN")
+          [ -n "${BOT_TOKEN_PARAMETER_NAME}" ] || missing+=("BOT_TOKEN_PARAMETER_NAME")
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing one or more required secrets: ${missing[*]}"
             exit 1
           fi
 
       - name: Notify Discord (deploy started)
+        continue-on-error: true
         env:
           DISCORD_DEPLOY_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+          DEPLOY_ENVIRONMENT: ${{ needs.resolve-target.outputs.environment }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ needs.resolve-target.outputs.git_ref }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -71,7 +144,7 @@ jobs:
           import urllib.request
 
           message = (
-              f"Deploy started for {os.environ['REPO']} on branch {os.environ['BRANCH']}.\n"
+              f"Deploy started ({os.environ['DEPLOY_ENVIRONMENT']}) for {os.environ['REPO']} on branch {os.environ['BRANCH']}.\n"
               f"Commit: {os.environ['COMMIT_SHA']}\n"
               f"Run: {os.environ['RUN_URL']}"
           )
@@ -84,6 +157,28 @@ jobs:
           )
           urllib.request.urlopen(request).read()
           PY
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+
+      - name: Fetch BOT_TOKEN from SSM Parameter Store
+        env:
+          BOT_TOKEN_PARAMETER_NAME: ${{ secrets.BOT_TOKEN_PARAMETER_NAME }}
+        run: |
+          set -euo pipefail
+          BOT_TOKEN="$(aws ssm get-parameter --name "${BOT_TOKEN_PARAMETER_NAME}" --with-decryption --query 'Parameter.Value' --output text)"
+          if [ -z "${BOT_TOKEN}" ]; then
+            echo "BOT_TOKEN parameter resolved to an empty value"
+            exit 1
+          fi
+
+          BOT_TOKEN_B64="$(printf '%s' "${BOT_TOKEN}" | base64 | tr -d '\n')"
+          echo "::add-mask::${BOT_TOKEN}"
+          echo "::add-mask::${BOT_TOKEN_B64}"
+          echo "BOT_TOKEN_B64=${BOT_TOKEN_B64}" >> "$GITHUB_ENV"
 
       - name: Setup SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -107,7 +202,10 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           REPOSITORY: ${{ github.repository }}
+          DEPLOY_GIT_REF: ${{ needs.resolve-target.outputs.git_ref }}
+          DEPLOY_ENVIRONMENT: ${{ needs.resolve-target.outputs.environment }}
           GIT_SHA: ${{ github.sha }}
+          BOT_TOKEN_B64: ${{ env.BOT_TOKEN_B64 }}
         run: |
           set -euo pipefail
           PORT="${DEPLOY_PORT:-22}"
@@ -119,13 +217,13 @@ jobs:
             fi
 
             cd \"${DEPLOY_PATH}\"
-            git fetch origin master --prune
-            git checkout master
-            git pull --ff-only origin master
+            git fetch origin \"${DEPLOY_GIT_REF}\" --prune
+            git checkout \"${DEPLOY_GIT_REF}\"
+            git pull --ff-only origin \"${DEPLOY_GIT_REF}\"
             mkdir -p db logs logs/archive
 
             if [ ! -f .env ]; then
-              echo \"Missing ${DEPLOY_PATH}/.env file with runtime secrets\"
+              echo \"Missing ${DEPLOY_PATH}/.env file with runtime secrets (excluding BOT_TOKEN).\"
               exit 1
             fi
 
@@ -138,7 +236,11 @@ jobs:
               exit 1
             fi
 
+            BOT_TOKEN=\"\$(printf '%s' \"${BOT_TOKEN_B64}\" | base64 -d)\"
+            export BOT_TOKEN
+            export DEPLOY_ENVIRONMENT=\"${DEPLOY_ENVIRONMENT}\"
             export GIT_SHA=\"${GIT_SHA}\"
+
             \$DOCKER_COMPOSE -f docker-compose.prod.yml up -d --build --remove-orphans
             \$DOCKER_COMPOSE -f docker-compose.prod.yml ps
             docker image prune -f
@@ -146,10 +248,12 @@ jobs:
 
       - name: Notify Discord (deploy success)
         if: ${{ success() }}
+        continue-on-error: true
         env:
           DISCORD_DEPLOY_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+          DEPLOY_ENVIRONMENT: ${{ needs.resolve-target.outputs.environment }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ needs.resolve-target.outputs.git_ref }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -164,7 +268,7 @@ jobs:
           import urllib.request
 
           message = (
-              f"Deploy succeeded for {os.environ['REPO']} on branch {os.environ['BRANCH']}.\n"
+              f"Deploy succeeded ({os.environ['DEPLOY_ENVIRONMENT']}) for {os.environ['REPO']} on branch {os.environ['BRANCH']}.\n"
               f"Commit: {os.environ['COMMIT_SHA']}\n"
               f"Run: {os.environ['RUN_URL']}"
           )
@@ -180,10 +284,12 @@ jobs:
 
       - name: Notify Discord (deploy failed)
         if: ${{ failure() }}
+        continue-on-error: true
         env:
           DISCORD_DEPLOY_WEBHOOK_URL: ${{ secrets.DISCORD_DEPLOY_WEBHOOK_URL }}
+          DEPLOY_ENVIRONMENT: ${{ needs.resolve-target.outputs.environment }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ needs.resolve-target.outputs.git_ref }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -198,7 +304,7 @@ jobs:
           import urllib.request
 
           message = (
-              f"Deploy failed for {os.environ['REPO']} on branch {os.environ['BRANCH']}.\n"
+              f"Deploy failed ({os.environ['DEPLOY_ENVIRONMENT']}) for {os.environ['REPO']} on branch {os.environ['BRANCH']}.\n"
               f"Commit: {os.environ['COMMIT_SHA']}\n"
               f"Run: {os.environ['RUN_URL']}"
           )

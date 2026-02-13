@@ -213,7 +213,7 @@ async function shutdown() {
 async function runBot() {
   if (!botToken) {
     throw new Error(
-      'Missing bot token. Create cfg/config.json from cfg/config-sample.json and set botToken.'
+      'Missing bot token. Set BOT_TOKEN in the runtime environment. In managed environments (production/canary), file-based botToken values are disabled by default.'
     );
   }
 
