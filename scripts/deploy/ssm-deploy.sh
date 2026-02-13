@@ -140,11 +140,9 @@ mkdir -p "${app_next}"
 
 cp -a "${artifact_root}/." "${app_next}/"
 
-# Ensure persistent mounts resolve correctly even when we swap app/ between releases.
+# Keep the app directory clean of persistent paths. docker-compose.prod.yml mounts
+# ../db and ../logs and reads ../.env from the deploy root.
 rm -rf "${app_next}/db" "${app_next}/logs" "${app_next}/.env"
-ln -sfn "../db" "${app_next}/db"
-ln -sfn "../logs" "${app_next}/logs"
-ln -sfn "../.env" "${app_next}/.env"
 
 compose_file="${app_next}/docker-compose.prod.yml"
 if [[ ! -f "${compose_file}" ]]; then
