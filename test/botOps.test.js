@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  BOT_STATUS_MARKER,
+  BOT_STATUS_TITLE,
+  buildBotStatusEmbed,
   buildBootstrapSummaryMessage,
   buildIssueCreationUrl,
   truncateText,
@@ -43,4 +46,17 @@ test('buildIssueCreationUrl returns a GitHub issue link with prefilled fields', 
   assert.equal(parsed.searchParams.get('labels'), 'bug');
   assert.match(parsed.searchParams.get('title') || '', /Bot Error/);
   assert.match(parsed.searchParams.get('body') || '', /Error context/);
+});
+
+test('buildBotStatusEmbed uses embed format with marker footer', () => {
+  const client = {
+    uptime: 15000,
+    guilds: { cache: { size: 1 } },
+  };
+  const embed = buildBotStatusEmbed(client);
+
+  assert.equal(embed.data.title, BOT_STATUS_TITLE);
+  assert.equal(embed.data.footer?.text, BOT_STATUS_MARKER);
+  assert.ok(Array.isArray(embed.data.fields));
+  assert.ok(embed.data.fields.some((field) => field.name === 'Uptime'));
 });
