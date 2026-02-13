@@ -1,187 +1,249 @@
-// Import required modules
-const { Client, Events, GatewayIntentBits, ActivityType } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { promisify } = require('util');
-const { botToken } = require('../cfg/config.json');
-const { logger, scriptDirectory } = require('./logger.js');
+const {
+  ActivityType,
+  Client,
+  Collection,
+  Events,
+  GatewayIntentBits,
+  Partials,
+} = require('discord.js');
 const cron = require('node-cron');
+const { botToken } = require('./config.js');
+const { logger, scriptDirectory } = require('./logger.js');
 const sendDailyVerse = require('./verseSender');
 const { getSubscribedUsers } = require('./db/subscribeDB.js');
-const { updateActiveGuilds, updateSubscribedUsersCount } = require('./db/statsDB.js');
+const { updateActiveGuilds } = require('./db/statsDB.js');
+const { closeDatabase } = require('./db/database.js');
+const {
+  logCommandError,
+  logRuntimeError,
+  upsertBotStatusMessage,
+} = require('./services/botOps.js');
 
+const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
+const BOT_STATUS_SCHEDULE = '*/30 * * * *';
+const DAILY_VERSE_SCHEDULE = '0 9 * * *';
+const DEFAULT_STATUS = 'the Word of God';
+const DELIVERY_CONCURRENCY = 5;
 
-// Initialize the Discord bot with specified intents
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds, // Listen for guild events
-    GatewayIntentBits.GuildMessages, // Listen for guild message events
-    GatewayIntentBits.MessageContent, // Listen for message content events
-    GatewayIntentBits.GuildMembers, // Listen for guild member events
-    GatewayIntentBits.GuildMessageReactions, // Listen for guild message reaction events
-    GatewayIntentBits.DirectMessages, // Listen for direct message events
-    GatewayIntentBits.DirectMessageReactions, // Listen for direct message reaction events
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
+  partials: [Partials.Channel],
 });
 
+client.commands = new Collection();
 
-// Run once when the client is ready
-client.once(Events.ClientReady, async () => {
-  logger.info(`Logged in as ${client.user.username}`);
+function loadCommandModules() {
+  const commandsPath = path.join(scriptDirectory, 'commands');
+  const commandFiles = fs
+    .readdirSync(commandsPath)
+    .filter((file) => file.endsWith('.js'));
 
-  try {
-    const avatar = await promisify(fs.readFile)(
-      path.join(scriptDirectory, '../assets/bible_scripture_icon.png')
-    );
-    await client.user.setAvatar(avatar);
-  } catch (error) {
-    logger.warn(`Failed to set bot avatar: ${error}`);
-  } finally {
-    logger.debug('Bot Avatar set');
-  }
+  for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    const command = require(filePath);
 
-  await updateActiveGuilds(client);
-  await updateSubscribedUsersCount();
+    if (!command?.data || typeof command.execute !== 'function') {
+      logger.warn(`Skipping invalid command module: ${filePath}`);
+      continue;
+    }
 
-  //Register commands on client startup
-  for (const guild of client.guilds.cache.values()) {
-    await registerSlashCommands(guild);
-  }
-});
-
-
-// Function to register slash commands in a guild
-// This function is called when the client is ready and when the client joins a guild
-async function registerSlashCommands(guild) {
-  const commands = fs
-    .readdirSync(path.join(scriptDirectory, 'commands'))
-    .filter((file) => file.endsWith('.js'))
-    .map((file) => {
-      const filePath = path.join(scriptDirectory, 'commands', file);
-      if (fs.existsSync(filePath)) {
-        const command = require(filePath);
-        return command.data.toJSON();
-      } else {
-        logger.warn(`Command file not found: ${filePath}`);
-        return null;
-      }
-    })
-    .filter(Boolean);
-
-  try {
-    await guild.commands.set(commands);
-    logger.info(`Slash commands registered in guild (ID/Name: ${guild.id}/${guild.name}, Owner: ${guild.ownerId})`);
-  } catch (error) {
-    logger.error(`Failed to register slash commands: ${error}`);
+    client.commands.set(command.data.name, command);
   }
 }
 
-// Event handler for when the client joins a guild
-client.on(Events.GuildCreate, async (guild) => {
-  logger.info(
-    `Joined guild (ID: ${guild.id}, Name: ${guild.name}, Owner: ${guild.ownerId})`
-  );
-  await registerSlashCommands(guild);
-  await updateActiveGuilds(client);
-});
+function loadStatuses() {
+  const statusesFilePath = path.join(scriptDirectory, '../assets/statuses.txt');
+  if (!fs.existsSync(statusesFilePath)) {
+    return [DEFAULT_STATUS];
+  }
 
-// Event handler for slash commands
-client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isCommand()) return;
-    const commandName = interaction.commandName;
-    const commandId = interaction.commandId;
-    logger.info(`Slash command received: ${commandName} (ID: ${commandId}, Guild/Name: ${interaction.guildId}/${interaction.guild.name}, User/Name: ${interaction.user.id}/${interaction.user.username}, Channel/Name: ${interaction.channelId}/${interaction.channel.name})`);
-    const command = interaction.guild.commands.fetch(commandId);
+  const statuses = fs
+    .readFileSync(statusesFilePath, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-    if (!command) return;
-    try {
-        // Execute the command located in the commands folder with the same name as the slash command
-        await require(path.join(scriptDirectory, 'commands', `${commandName}.js`)).execute(interaction);
+  return statuses.length > 0 ? statuses : [DEFAULT_STATUS];
+}
 
-    } catch (error) {
-        logger.error(error.stack);
-        await interaction.reply({ content: 'An error occurred while executing the command.', ephemeral: true });
-    }
-});
+async function registerSlashCommands(guild) {
+  const commandPayload = client.commands.map((command) => command.data.toJSON());
 
-// Function to run the client and tasks
-async function runBot() {
-  await client.login(botToken);
-
-  // Read the statuses from the statuses.txt file
-  const statuses = fs.readFileSync(path.join(scriptDirectory, '../assets/statuses.txt'), 'utf8').split('\n');
-  await setStatus(statuses);
-
-  // Set the bot status every 5 minutes
-  cron.schedule('*/5 * * * *', async () => {
-    await setStatus(statuses);
-  });
-
-  // Schedule the task to run at 0900 EST and repeat daily
-  runTaskAtSpecificTime(sendDailyVerseToSubscribedUsers, 9, 0);
+  try {
+    await guild.commands.set(commandPayload);
+    logger.info(
+      `Slash commands registered in guild ${guild.name} (${guild.id}), owner: ${guild.ownerId}`
+    );
+  } catch (error) {
+    logger.error(`Failed to register slash commands for guild ${guild.id}`, error);
+  }
 }
 
 async function sendDailyVerseToSubscribedUsers() {
   try {
     const subscribedUsers = await getSubscribedUsers();
-    logger.info('Sending daily verse to ' + subscribedUsers.length + ' users');
+    logger.info(`Sending daily verse to ${subscribedUsers.length} users`);
+
+    const batch = [];
     for (const user of subscribedUsers) {
-      logger.debug('Sending daily verse to ' + user.id);
-      await sendDailyVerse(client, user.id, 'votd');
+      batch.push(
+        sendDailyVerse(client, user.id, 'votd', {
+          translation: user.translation,
+        })
+      );
+
+      if (batch.length >= DELIVERY_CONCURRENCY) {
+        await Promise.allSettled(batch.splice(0, batch.length));
+      }
+    }
+
+    if (batch.length > 0) {
+      await Promise.allSettled(batch);
     }
   } catch (error) {
-    logger.error(error.stack);
+    logger.error('Error during daily verse delivery', error);
   }
 }
 
-function runTaskAtSpecificTime(task, targetHour, targetMinute) {
-  const now = new Date();
-  const targetTime = new Date();
-  
-  targetTime.setHours(targetHour);
-  targetTime.setMinutes(targetMinute);
-  targetTime.setSeconds(0);
+function scheduleRecurringJobs() {
+  const statuses = loadStatuses();
+  let statusIndex = 0;
 
-  const timeDifference = targetTime - now;
+  const rotateStatus = () => {
+    const nextStatus = statuses[statusIndex];
+    statusIndex = (statusIndex + 1) % statuses.length;
+    logger.debug(`Setting status to: ${nextStatus}`);
+    client.user.setActivity(nextStatus, { type: ActivityType.Listening });
+  };
 
-  if (timeDifference > 0) {
-    logger.info(`Scheduled to send daily verse to subscribers in (hh:mm:ss): ${msToTime(timeDifference)}`);
-    setTimeout(async () => {
-      logger.debug(`Running daily verse task at ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
-      await task();
-      logger.debug(`Daily verse task completed at ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
-      runTaskAtSpecificTime(task, targetHour, targetMinute); // Schedule the task for the next day
-    }, timeDifference);
-  } else {
-    targetTime.setDate(targetTime.getDate() + 1);
-    const nextDayTimeDifference = targetTime - now;
-    logger.info(`Scheduled to send daily verse to subscribers in (hh:mm:ss): ${msToTime(nextDayTimeDifference)}`);
-    setTimeout(async () => {
-      logger.debug(`Running daily verse task at ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
-      await task();
-      logger.debug(`Daily verse task completed at ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
-      runTaskAtSpecificTime(task, targetHour, targetMinute); // Schedule the task for the next day
-    }, nextDayTimeDifference);
+  rotateStatus();
+  cron.schedule(STATUS_ROTATION_SCHEDULE, rotateStatus);
+  upsertBotStatusMessage(client).catch((error) => {
+    logger.warn(`Failed to upsert bot status message: ${error}`);
+  });
+  cron.schedule(BOT_STATUS_SCHEDULE, async () => {
+    try {
+      await upsertBotStatusMessage(client);
+    } catch (error) {
+      logger.warn(`Failed to refresh bot status message: ${error}`);
+    }
+  });
+  cron.schedule(DAILY_VERSE_SCHEDULE, sendDailyVerseToSubscribedUsers, {
+    timezone: 'America/New_York',
+  });
+
+  logger.info('Scheduled daily verse delivery at 09:00 America/New_York');
+}
+
+client.once(Events.ClientReady, async () => {
+  logger.info(`Logged in as ${client.user.username}`);
+
+  try {
+    const avatarPath = path.join(scriptDirectory, '../assets/bible_scripture_icon.png');
+    if (fs.existsSync(avatarPath)) {
+      const avatar = fs.readFileSync(avatarPath);
+      await client.user.setAvatar(avatar);
+    }
+  } catch (error) {
+    logger.warn(`Failed to set bot avatar: ${error}`);
+  }
+
+  await updateActiveGuilds(client);
+
+  const guildRegistrations = [];
+  for (const guild of client.guilds.cache.values()) {
+    guildRegistrations.push(registerSlashCommands(guild));
+  }
+  await Promise.allSettled(guildRegistrations);
+
+  scheduleRecurringJobs();
+});
+
+client.on(Events.GuildCreate, async (guild) => {
+  logger.info(`Joined guild ${guild.name} (${guild.id}), owner: ${guild.ownerId}`);
+  await registerSlashCommands(guild);
+  await updateActiveGuilds(client);
+});
+
+client.on(Events.GuildDelete, async (guild) => {
+  logger.info(`Removed from guild ${guild.name || 'unknown'} (${guild.id})`);
+  await updateActiveGuilds(client);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) {
+    return;
+  }
+
+  const command = client.commands.get(interaction.commandName);
+  logger.info(
+    `Slash command received: ${interaction.commandName}, guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
+  );
+
+  if (!command) {
+    logger.warn(`No command handler found for: ${interaction.commandName}`);
+    return;
+  }
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    logger.error(`Unhandled error in command ${interaction.commandName}`, error);
+    await logCommandError(interaction, error, 'Unhandled command execution error');
+    const message = 'An error occurred while executing this command.';
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({ content: message, ephemeral: true });
+    } else {
+      await interaction.reply({ content: message, ephemeral: true });
+    }
+  }
+});
+
+async function shutdown() {
+  try {
+    client.destroy();
+    await closeDatabase();
+  } catch (error) {
+    logger.warn(`Failed to close database cleanly: ${error}`);
   }
 }
 
-//function to convert ms to hh:mm:ss
-function msToTime(duration) {
-  var milliseconds = parseInt((duration % 1000) / 100),
-      seconds = parseInt((duration / 1000) % 60),
-      minutes = parseInt((duration / (1000 * 60)) % 60),
-      hours = parseInt((duration / (1000 * 60 * 60)) % 24);
+async function runBot() {
+  if (!botToken) {
+    throw new Error(
+      'Missing bot token. Create cfg/config.json from cfg/config-sample.json and set botToken.'
+    );
+  }
 
-  return `${hours}:${minutes}:${seconds}.${milliseconds}`;
+  loadCommandModules();
+  await client.login(botToken);
 }
 
-//Function to set the bot status
-async function setStatus(statuses) {
-  const status = statuses.shift();
-  statuses.push(status);
-  logger.debug(`Setting status to: ${status}`);
-  client.user.setActivity(status, { type: ActivityType.Listening});
-}
+runBot().catch((error) => {
+  logger.error('Bot failed to start', error);
+  process.exitCode = 1;
+});
 
-// Run the bot using promisify to handle promises
-promisify(runBot)();
+process.once('SIGINT', async () => {
+  await shutdown();
+  process.exit(0);
+});
+
+process.once('SIGTERM', async () => {
+  await shutdown();
+  process.exit(0);
+});
+
+process.on('unhandledRejection', async (reason) => {
+  const error =
+    reason instanceof Error ? reason : new Error(`Unhandled rejection: ${String(reason)}`);
+  logger.error('Unhandled promise rejection', error);
+  await logRuntimeError(client, error, 'unhandledRejection');
+});
+
+process.on('uncaughtException', async (error) => {
+  logger.error('Uncaught exception', error);
+  await logRuntimeError(client, error, 'uncaughtException');
+});

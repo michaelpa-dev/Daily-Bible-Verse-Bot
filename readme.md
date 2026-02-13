@@ -1,112 +1,98 @@
 # Daily Bible Verse Bot
 
-The Daily Bible Verse Bot is a Discord bot that provides users with daily Bible verses, random verses, and more. It allows users to subscribe and unsubscribe from receiving daily verses and provides various statistics about its usage and activity.
-
-- [Daily Bible Verse Bot](#daily-bible-verse-bot)
-  - [If you wish to invite the bot to your server but do not want to run the bot yourself](#if-you-wish-to-invite-the-bot-to-your-server-but-do-not-want-to-run-the-bot-yourself)
-  - [Features](#features)
-  - [Installation](#installation)
-  - [Configuration](#configuration)
-  - [Usage](#usage)
-  - [Available Commands](#available-commands)
-  - [Directory Structure](#directory-structure)
-  - [Credits](#credits)
-  - [License](#license)
-
-
-## If you wish to invite the bot to your server but do not want to run the bot yourself
-- [Invite Link For Bot](https://discord.com/api/oauth2/authorize?client_id=1138224345446105108&permissions=380104993792&scope=applications.commands%20bot)
-- Join our [Development Discord Server](https://discord.gg/VquUZs2msF) to engage with the community.
+Daily Bible Verse Bot is a Discord bot that delivers daily verses, random verse requests, and server operations tooling for a production-style development workflow.
 
 ## Features
 
-- Get a daily Bible verse sent to your DM.
-- Receive a random Bible verse on demand.
-- Subscribe and unsubscribe from daily Bible verses.
-- View bot statistics, including subscribed users and command usage.
-- Customizable status messages.
-- Cross-server support.
+- Daily verse delivery to subscribed users.
+- Random verse delivery on-demand.
+- Per-user translation preferences.
+- Dev server bootstrap automation for roles/channels/overwrites/templates.
+- Ops commands for health, version, and release notes.
+- Structured bot error logging to `#bot-logs`.
 
 ## Installation
 
-1. Clone this repository to your local machine.
-2. Install the required dependencies using `npm install`.
+1. Clone this repository.
+2. Install dependencies:
+   - `npm install`
 
 ## Configuration
 
-1. Rename the `cfg/config.sample.json` file to `cfg/config.json`.
-2. Replace the `botToken` value in `config.json` with your Discord bot token.
+Copy `cfg/config-sample.json` to `cfg/config.json` and update values as needed.
+
+Environment variables are preferred for secrets and CI/CD deployments:
+
+- `BOT_TOKEN` (recommended, keep out of git)
+- `BIBLE_API_URL` (optional override)
+- `TRANSLATION_API_URL` (optional override)
+- `DEFAULT_TRANSLATION` (optional override)
+- `LOG_LEVEL` (optional override)
+- `GIT_SHA` or `COMMIT_SHA` (optional, used by `/version` and `/health`)
 
 ## Usage
 
-1. Run the bot using `node ./js/bot.js` or the provided `/scripts/pm2-startup.sh` script.
-2. Invite the bot to your Discord server using the provided invite link.
-3. Use the available slash commands to interact with the bot.
+- Start locally:
+  - `npm start`
+- Run tests:
+  - `npm test`
 
-## Available Commands
+## Slash Commands
 
-- `/subscribe`: Subscribe to receive daily Bible verses.
-- `/unsubscribe`: Unsubscribe from receiving daily Bible verses.
-- `/randomverse`: Get a random Bible verse via DM.
-- `/stats`: View bot statistics, including subscribed users and command usage.
-- `/support`: Get a link to the issue tracker for reporting issues and requesting support.
+- `/subscribe`
+- `/unsubscribe`
+- `/randomverse`
+- `/settranslation`
+- `/stats`
+- `/support`
+- `/health`
+- `/version`
+- `/release-notes` (Maintainer/Owner)
+- `/bootstrap-dev-server` (Maintainer/Owner)
 
-## Directory Structure
+## Discord Dev Server Setup
 
-daily-bible-verse-bot/
+Target dev guild:
+- `1471943418002280451`
 
-```
-│
-├── assets/
-│ ├── bible_scripture_icon.png
-│ └── statuses.txt
-│
-├── cfg/
-│ └── config.json
-│
-├── db/
-│ ├── subscribed_users.json
-│ └── stats.json
-│
-├── js/
-│ ├── commands/
-│ │ ├── subscribe.js
-│ │ ├── unsubscribe.js
-│ │ ├── randomverse.js
-│ │ ├── stats.js
-│ │ └── support.js
-│ ├── db/
-│ │ ├── subscribeDB.js
-│ │ └── statsDB.js
-│ ├── services/
-│ │ └── bibleApi.js
-│ ├── bot.js
-│ ├── logger.js
-│ └── verseSender.js
-│
-├── logs/
-│ ├── archive/
-│ │ ├── applicationExit_<timestamp>.log
-│ │ └── bot_<timestamp>.log
-│ ├── applicationExit.log
-│ └── bot.log
-│
-│ ├── archiveLog.sh
-│ ├── pm2-startup.sh
-│ └── pm2-stop.sh
-│
-├── package-lock.json
-├── package.json
-└── README.md
-```
+### OAuth Scopes
 
-## Credits
+- `bot`
+- `applications.commands`
 
-- [Bible.org Labs](https://labs.bible.org/)
-- [Discord.js](https://discord.js.org/)
-- [Node.js](https://nodejs.org/)
-- [Canvas](https://www.npmjs.com/package/canvas)
-- [node-cron](https://www.npmjs.com/package/node-cron)
+### Minimal Recommended Bot Permissions
+
+Grant only what is required for this project:
+
+- `View Channels`
+- `Send Messages`
+- `Embed Links`
+- `Attach Files`
+- `Read Message History`
+- `Use Slash Commands`
+- `Manage Channels` (bootstrap channel/category creation/repair)
+- `Manage Roles` (bootstrap role creation/overwrite repair)
+- `Manage Messages` (template pinning and status message updates)
+
+Avoid `Administrator` unless you explicitly need it for debugging.
+
+### How to Run Bootstrap
+
+1. Invite the bot with the scopes and permissions above.
+2. Run preview mode:
+   - `/bootstrap-dev-server dry_run:true`
+3. Apply changes:
+   - `/bootstrap-dev-server apply:true`
+4. Re-run preview to verify idempotency:
+   - `/bootstrap-dev-server dry_run:true`
+
+Detailed server spec is documented in `docs/discord-dev-server.md`.
+
+## Development Notes
+
+- Admin/ops commands are restricted to guild owner or `Maintainer` role.
+- Operational logs are written to `#bot-logs` when available.
+- Status heartbeat can be maintained in `#bot-status`.
 
 ## License
 

@@ -1,6 +1,8 @@
 {
-    "botToken": "YOUR_BOT_TOKEN_HERE",
-    "bibleApiUrl": "https://labs.bible.org/api/?type=json&passage=",
-    "version": "0.1.1"
-  }
-  
+  "botToken": "YOUR_BOT_TOKEN_HERE",
+  "bibleApiUrl": "https://labs.bible.org/api/?type=json&passage=",
+  "translationApiUrl": "https://bible-api.com/",
+  "defaultTranslation": "web",
+  "logLevel": "debug",
+  "version": "0.2.0"
+}
