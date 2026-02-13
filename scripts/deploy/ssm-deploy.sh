@@ -88,6 +88,8 @@ echo "  artifact_root:${artifact_root}"
 aws_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 echo "  aws_region:   ${aws_region}"
 
+container_name="daily-bible-verse-bot"
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker not found on instance. Install Docker first." >&2
   exit 1
@@ -131,6 +133,28 @@ EOF
   chmod 0600 "${deploy_root}/.env"
 fi
 
+# docker compose needs BOT_TOKEN present even for `down` because the compose file uses
+# `${BOT_TOKEN:?…}` interpolation. Export early so stop/start are both idempotent.
+echo "Fetching bot token from Parameter Store: ${token_parameter}"
+bot_token="$(
+  aws ssm get-parameter \
+    --region "${aws_region}" \
+    --name "${token_parameter}" \
+    --with-decryption \
+    --query "Parameter.Value" \
+    --output text
+)"
+
+if [[ -z "${bot_token}" || "${bot_token}" = "None" ]]; then
+  echo "BOT_TOKEN parameter is empty or missing." >&2
+  exit 1
+fi
+
+export BOT_TOKEN="${bot_token}"
+export DEPLOY_ENVIRONMENT="${environment}"
+export GIT_SHA="${git_sha:-unknown}"
+export RELEASE_TAG="${release_tag}"
+
 app_next="${deploy_root}/app.next"
 app_current="${deploy_root}/app"
 app_prev="${deploy_root}/app.prev"
@@ -156,37 +180,22 @@ if [[ -f "${app_current}/docker-compose.prod.yml" ]]; then
   "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" down --remove-orphans || true
 fi
 
+# Extra safety: ensure the fixed container name doesn't block re-deploys if compose
+# couldn't parse due to missing env vars in a previous run.
+if docker inspect "${container_name}" >/dev/null 2>&1; then
+  echo "Removing existing container ${container_name}..."
+  docker rm -f "${container_name}" || true
+fi
+
 rm -rf "${app_prev}"
 if [[ -d "${app_current}" ]]; then
   mv "${app_current}" "${app_prev}"
 fi
 mv "${app_next}" "${app_current}"
 
-echo "Fetching bot token from Parameter Store: ${token_parameter}"
-bot_token="$(
-  aws ssm get-parameter \
-    --region "${aws_region}" \
-    --name "${token_parameter}" \
-    --with-decryption \
-    --query "Parameter.Value" \
-    --output text
-)"
-
-if [[ -z "${bot_token}" || "${bot_token}" = "None" ]]; then
-  echo "BOT_TOKEN parameter is empty or missing." >&2
-  exit 1
-fi
-
-export BOT_TOKEN="${bot_token}"
-export DEPLOY_ENVIRONMENT="${environment}"
-export GIT_SHA="${git_sha:-unknown}"
-export RELEASE_TAG="${release_tag}"
-
 echo "Starting service..."
 "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" up -d --build --remove-orphans
 "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" ps
-
-container_name="daily-bible-verse-bot"
 
 if ! docker inspect "${container_name}" >/dev/null 2>&1; then
   echo "Expected container ${container_name} not found after deploy." >&2
