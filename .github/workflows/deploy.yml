@@ -62,23 +62,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          CONTENT="Deploy started for ${REPO} on branch ${BRANCH}.
-Commit: ${COMMIT_SHA}
-Run: ${RUN_URL}"
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          payload = json.dumps({"content": os.environ["CONTENT"]}).encode("utf-8")
-          request = urllib.request.Request(
-              os.environ["DISCORD_DEPLOY_WEBHOOK_URL"],
-              data=payload,
-              headers={"Content-Type": "application/json"},
-              method="POST",
-          )
-          urllib.request.urlopen(request).read()
-          PY
+          CONTENT="Deploy started for ${REPO} on branch ${BRANCH}.\nCommit: ${COMMIT_SHA}\nRun: ${RUN_URL}"
+          python -c "import json,os,urllib.request;payload=json.dumps({'content':os.environ['CONTENT']}).encode('utf-8');request=urllib.request.Request(os.environ['DISCORD_DEPLOY_WEBHOOK_URL'],data=payload,headers={'Content-Type':'application/json'},method='POST');urllib.request.urlopen(request).read()"
 
       - name: Setup SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -149,23 +134,8 @@ Run: ${RUN_URL}"
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          CONTENT="Deploy succeeded for ${REPO} on branch ${BRANCH}.
-Commit: ${COMMIT_SHA}
-Run: ${RUN_URL}"
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          payload = json.dumps({"content": os.environ["CONTENT"]}).encode("utf-8")
-          request = urllib.request.Request(
-              os.environ["DISCORD_DEPLOY_WEBHOOK_URL"],
-              data=payload,
-              headers={"Content-Type": "application/json"},
-              method="POST",
-          )
-          urllib.request.urlopen(request).read()
-          PY
+          CONTENT="Deploy succeeded for ${REPO} on branch ${BRANCH}.\nCommit: ${COMMIT_SHA}\nRun: ${RUN_URL}"
+          python -c "import json,os,urllib.request;payload=json.dumps({'content':os.environ['CONTENT']}).encode('utf-8');request=urllib.request.Request(os.environ['DISCORD_DEPLOY_WEBHOOK_URL'],data=payload,headers={'Content-Type':'application/json'},method='POST');urllib.request.urlopen(request).read()"
 
       - name: Notify Discord (deploy failed)
         if: ${{ failure() && secrets.DISCORD_DEPLOY_WEBHOOK_URL != '' }}
@@ -177,20 +147,5 @@ Run: ${RUN_URL}"
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          CONTENT="Deploy failed for ${REPO} on branch ${BRANCH}.
-Commit: ${COMMIT_SHA}
-Run: ${RUN_URL}"
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          payload = json.dumps({"content": os.environ["CONTENT"]}).encode("utf-8")
-          request = urllib.request.Request(
-              os.environ["DISCORD_DEPLOY_WEBHOOK_URL"],
-              data=payload,
-              headers={"Content-Type": "application/json"},
-              method="POST",
-          )
-          urllib.request.urlopen(request).read()
-          PY
+          CONTENT="Deploy failed for ${REPO} on branch ${BRANCH}.\nCommit: ${COMMIT_SHA}\nRun: ${RUN_URL}"
+          python -c "import json,os,urllib.request;payload=json.dumps({'content':os.environ['CONTENT']}).encode('utf-8');request=urllib.request.Request(os.environ['DISCORD_DEPLOY_WEBHOOK_URL'],data=payload,headers={'Content-Type':'application/json'},method='POST');urllib.request.urlopen(request).read()"
