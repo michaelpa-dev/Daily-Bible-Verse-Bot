@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Daily Bible Verse Bot (SSM deploy foundation: instance roles, GitHub OIDC role, canary auto-stop)"
+
+Parameters:
+  GitHubOidcProviderArn:
+    Type: String
+    Description: ARN of the IAM OIDC provider for https://token.actions.githubusercontent.com
+
+  GitHubOrg:
+    Type: String
+    Default: michaelpa-dev
+
+  GitHubRepo:
+    Type: String
+    Default: Daily-Bible-Verse-Bot
+
+  AppTagValue:
+    Type: String
+    Default: DailyBibleVerseBot
+
+  CanaryTokenParameterName:
+    Type: String
+    Default: /daily-bible-verse-bot/canary/BOT_TOKEN
+
+  ProductionTokenParameterName:
+    Type: String
+    Default: /daily-bible-verse-bot/production/BOT_TOKEN
+
+Resources:
+  ProductionInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DailyBibleVerseBotProductionInstanceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ReadProductionBotToken
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ProductionTokenParameterName}
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+
+  ProductionInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: DailyBibleVerseBotProductionInstanceProfile
+      Roles:
+        - !Ref ProductionInstanceRole
+
+  CanaryInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DailyBibleVerseBotCanaryInstanceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ReadCanaryBotToken
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${CanaryTokenParameterName}
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+
+  CanaryInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: DailyBibleVerseBotCanaryInstanceProfile
+      Roles:
+        - !Ref CanaryInstanceRole
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DailyBibleVerseBotGitHubActionsRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/master
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/tags/v*
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:environment:production
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:environment:canary
+      Policies:
+        - PolicyName: DeployViaSsm
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeTags
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - ec2:CreateTags
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/App: !Ref AppTagValue
+              - Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                  - ssm:GetCommandInvocation
+                  - ssm:ListCommandInvocations
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${CanaryTokenParameterName}
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ProductionTokenParameterName}
+              - Effect: Allow
+                Action:
+                  - kms:Encrypt
+                  - kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+
+  CanaryAutoStopLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DailyBibleVerseBotCanaryAutoStopRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: StopCanaryInstances
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:StopInstances
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/App: !Ref AppTagValue
+
+  CanaryAutoStopFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: DailyBibleVerseBot-CanaryAutoStop
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CanaryAutoStopLambdaRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          APP_TAG_VALUE: !Ref AppTagValue
+          ENVIRONMENT_TAG_VALUE: canary
+          LAST_PUSH_TAG_KEY: CanaryLastPushEpoch
+          MAX_AGE_SECONDS: "14400"
+      Code:
+        ZipFile: |
+          import os
+          import time
+          import boto3
+          from botocore.exceptions import ClientError
+
+          ec2 = boto3.client("ec2")
+
+          def _get_tag(tags, key):
+            if not tags:
+              return None
+            for tag in tags:
+              if tag.get("Key") == key:
+                return tag.get("Value")
+            return None
+
+          def handler(event, context):
+            app_value = os.environ.get("APP_TAG_VALUE", "DailyBibleVerseBot")
+            env_value = os.environ.get("ENVIRONMENT_TAG_VALUE", "canary")
+            last_push_key = os.environ.get("LAST_PUSH_TAG_KEY", "CanaryLastPushEpoch")
+            max_age_seconds = int(os.environ.get("MAX_AGE_SECONDS", "14400"))
+
+            now = int(time.time())
+            stopped = []
+            kept = []
+
+            paginator = ec2.get_paginator("describe_instances")
+            try:
+              page_iter = paginator.paginate(
+                Filters=[
+                  {"Name": "tag:App", "Values": [app_value]},
+                  {"Name": "tag:Environment", "Values": [env_value]},
+                  {"Name": "instance-state-name", "Values": ["running"]},
+                ]
+              )
+            except ClientError as e:
+              print(f"describe_instances failed: {e}")
+              raise
+
+            for page in page_iter:
+              for reservation in page.get("Reservations", []):
+                for instance in reservation.get("Instances", []):
+                  instance_id = instance.get("InstanceId")
+                  tags = instance.get("Tags", [])
+                  last_push_raw = _get_tag(tags, last_push_key)
+                  try:
+                    last_push_epoch = int(last_push_raw) if last_push_raw else 0
+                  except ValueError:
+                    last_push_epoch = 0
+
+                  age = now - last_push_epoch
+                  if age >= max_age_seconds:
+                    print(f"Stopping canary instance {instance_id}: age={age}s last_push={last_push_raw}")
+                    try:
+                      ec2.stop_instances(InstanceIds=[instance_id])
+                      stopped.append(instance_id)
+                    except ClientError as e:
+                      print(f"stop_instances failed for {instance_id}: {e}")
+                      raise
+                  else:
+                    kept.append({"InstanceId": instance_id, "AgeSeconds": age, "LastPushEpoch": last_push_epoch})
+
+            result = {"stopped": stopped, "kept": kept, "now": now, "maxAgeSeconds": max_age_seconds}
+            print(result)
+            return result
+
+  CanaryAutoStopScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: DailyBibleVerseBot-CanaryAutoStop
+      ScheduleExpression: rate(15 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CanaryAutoStopFunction.Arn
+          Id: CanaryAutoStopLambda
+
+  CanaryAutoStopPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CanaryAutoStopFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CanaryAutoStopScheduleRule.Arn
+
+Outputs:
+  GitHubActionsRoleArn:
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+
+  ProductionInstanceProfileName:
+    Value: !Ref ProductionInstanceProfile
+
+  CanaryInstanceProfileName:
+    Value: !Ref CanaryInstanceProfile
+
+  CanaryAutoStopFunctionName:
+    Value: !Ref CanaryAutoStopFunction

@@ -1,0 +1,252 @@
+name: Deploy Canary (Ephemeral EC2 via SSM)
+
+on:
+  workflow_run:
+    workflows: ["Build and Release"]
+    types:
+      - completed
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-canary
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy Canary
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'master'
+      }}
+    environment: canary
+    env:
+      AWS_REGION: us-east-1
+      AWS_ROLE_ARN: arn:aws:iam::446363550367:role/DailyBibleVerseBotGitHubActionsRole
+      APP_TAG_VALUE: DailyBibleVerseBot
+      BOT_TOKEN_PARAMETER_NAME: /daily-bible-verse-bot/canary/BOT_TOKEN
+    steps:
+      - name: Configure AWS credentials (GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve canary instance id (by tags)
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          instance_ids="$(aws ec2 describe-instances \
+            --region "${AWS_REGION}" \
+            --filters \
+              "Name=tag:App,Values=${APP_TAG_VALUE}" \
+              "Name=tag:Environment,Values=canary" \
+              "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query "Reservations[].Instances[].InstanceId" \
+            --output text)"
+
+          if [ -z "${instance_ids}" ]; then
+            echo "No canary instances found for App=${APP_TAG_VALUE}, Environment=canary"
+            exit 1
+          fi
+
+          if [ "$(echo "${instance_ids}" | wc -w | tr -d ' ')" != "1" ]; then
+            echo "Expected exactly 1 canary instance, found: ${instance_ids}"
+            exit 1
+          fi
+
+          instance_id="${instance_ids}"
+          echo "instance_id=${instance_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Start canary instance if stopped (then wait for health checks)
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+        run: |
+          set -euo pipefail
+
+          state="$(aws ec2 describe-instances \
+            --region "${AWS_REGION}" \
+            --instance-ids "${INSTANCE_ID}" \
+            --query "Reservations[0].Instances[0].State.Name" \
+            --output text)"
+
+          echo "Canary instance state: ${state}"
+
+          if [ "${state}" = "stopping" ]; then
+            aws ec2 wait instance-stopped --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
+            state="stopped"
+          fi
+
+          if [ "${state}" = "stopped" ]; then
+            aws ec2 start-instances --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}" >/dev/null
+          fi
+
+          aws ec2 wait instance-running --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
+          aws ec2 wait instance-status-ok --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
+
+      - name: Update canary last-push timestamp tag (extends 4h window)
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+        run: |
+          set -euo pipefail
+          epoch="$(date +%s)"
+          iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          aws ec2 create-tags \
+            --region "${AWS_REGION}" \
+            --resources "${INSTANCE_ID}" \
+            --tags \
+              "Key=CanaryLastPushEpoch,Value=${epoch}" \
+              "Key=CanaryLastPushIso,Value=${iso}" \
+              "Key=CanaryAutoStop,Value=enabled"
+
+      - name: Sync BOT_TOKEN to SSM Parameter Store (SecureString)
+        shell: bash
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${BOT_TOKEN}"
+
+          aws ssm put-parameter \
+            --region "${AWS_REGION}" \
+            --name "${BOT_TOKEN_PARAMETER_NAME}" \
+            --type "SecureString" \
+            --overwrite \
+            --value "${BOT_TOKEN}" >/dev/null
+
+      - name: Deploy canary via SSM RunCommand (GitHub Release artifact)
+        id: ssm
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+          GITHUB_REPO: ${{ github.repository }}
+          RELEASE_TAG: canary-${{ github.event.workflow_run.head_sha }}
+          GIT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          deploy_script="$(cat <<SCRIPT
+          set -euo pipefail
+
+          DEPLOY_ROOT="/opt/daily-bible-verse-bot"
+          ENVIRONMENT="canary"
+          GITHUB_REPO="${GITHUB_REPO}"
+          RELEASE_TAG="${RELEASE_TAG}"
+          GIT_SHA="${GIT_SHA}"
+	          TOKEN_PARAM="${BOT_TOKEN_PARAMETER_NAME}"
+
+	          ASSET_NAME="daily-bible-verse-bot-\${RELEASE_TAG}.tar.gz"
+	          ARTIFACT_URL="https://github.com/\${GITHUB_REPO}/releases/download/\${RELEASE_TAG}/\${ASSET_NAME}"
+	          ARCHIVE_URL="https://github.com/\${GITHUB_REPO}/archive/refs/tags/\${RELEASE_TAG}.tar.gz"
+
+	          WORK_DIR="/tmp/dbv-release"
+	          rm -rf "\${WORK_DIR}"
+	          mkdir -p "\${WORK_DIR}"
+	          cd "\${WORK_DIR}"
+
+	          echo "Downloading release asset: \${ARTIFACT_URL}"
+	          if curl -fL "\${ARTIFACT_URL}" -o "\${ASSET_NAME}"; then
+	            tar -xzf "\${ASSET_NAME}" -C "\${WORK_DIR}"
+	            DEPLOY_SCRIPT_PATH="\${WORK_DIR}/scripts/deploy/ssm-deploy.sh"
+	          else
+	            echo "Release asset download failed; falling back to repo archive: \${ARCHIVE_URL}"
+	            curl -fL "\${ARCHIVE_URL}" -o source.tar.gz
+	            tar -xzf source.tar.gz -C "\${WORK_DIR}"
+	            src_dir="$(ls -d "\${WORK_DIR}"/*/ | head -n 1 || true)"
+	            if [ -z "\${src_dir}" ]; then
+	              echo "Unable to locate extracted source directory." >&2
+	              exit 1
+	            fi
+	            DEPLOY_SCRIPT_PATH="\${src_dir}scripts/deploy/ssm-deploy.sh"
+	          fi
+
+	          bash "\${DEPLOY_SCRIPT_PATH}" \
+	            --deploy-root "\${DEPLOY_ROOT}" \
+	            --environment "\${ENVIRONMENT}" \
+	            --github-repo "\${GITHUB_REPO}" \
+	            --release-tag "\${RELEASE_TAG}" \
+	            --git-sha "\${GIT_SHA}" \
+	            --token-parameter "\${TOKEN_PARAM}"
+SCRIPT
+	          )"
+
+          script_b64="$(printf '%s' "${deploy_script}" | base64 -w0)"
+
+          jq -n \
+            --arg instanceId "${INSTANCE_ID}" \
+            --arg comment "DailyBibleVerseBot canary deploy ${RELEASE_TAG}" \
+            --arg scriptB64 "${script_b64}" \
+            '{
+              DocumentName: "AWS-RunShellScript",
+              InstanceIds: [$instanceId],
+              Comment: $comment,
+              Parameters: {
+                commands: [
+                  "set -euo pipefail",
+                  "printf '\''%s'\'' \"" + $scriptB64 + "\" | base64 -d > /tmp/dbv_deploy.sh",
+                  "chmod +x /tmp/dbv_deploy.sh",
+                  "/tmp/dbv_deploy.sh"
+                ]
+              }
+            }' > ssm-input.json
+
+          command_id="$(aws ssm send-command \
+            --region "${AWS_REGION}" \
+            --cli-input-json file://ssm-input.json \
+            --query "Command.CommandId" \
+            --output text)"
+
+          echo "command_id=${command_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSM command + surface output
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+          COMMAND_ID: ${{ steps.ssm.outputs.command_id }}
+        run: |
+          set -euo pipefail
+
+          set +e
+          aws ssm wait command-executed --region "${AWS_REGION}" --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}"
+          wait_exit=$?
+          set -e
+
+          status="$(aws ssm get-command-invocation \
+            --region "${AWS_REGION}" \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "Status" \
+            --output text)"
+
+          stdout="$(aws ssm get-command-invocation \
+            --region "${AWS_REGION}" \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "StandardOutputContent" \
+            --output text)"
+
+          stderr="$(aws ssm get-command-invocation \
+            --region "${AWS_REGION}" \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "StandardErrorContent" \
+            --output text)"
+
+          echo "SSM status: ${status}"
+          echo "${stdout}"
+          if [ -n "${stderr}" ] && [ "${stderr}" != "None" ]; then
+            echo "${stderr}" >&2
+          fi
+
+          if [ "${status}" != "Success" ] || [ "${wait_exit}" -ne 0 ]; then
+            exit 1
+          fi

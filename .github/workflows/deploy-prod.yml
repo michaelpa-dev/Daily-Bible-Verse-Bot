@@ -1,0 +1,253 @@
+name: Deploy Production (EC2 via SSM)
+
+on:
+  release:
+    types:
+      - published
+      - released
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to deploy (e.g., v0.2.0). Used for manual deploys/rollbacks.
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'release' && github.event.release.prerelease == false)
+      }}
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ROLE_ARN: arn:aws:iam::446363550367:role/DailyBibleVerseBotGitHubActionsRole
+      APP_TAG_VALUE: DailyBibleVerseBot
+      BOT_TOKEN_PARAMETER_NAME: /daily-bible-verse-bot/production/BOT_TOKEN
+    steps:
+      - name: Configure AWS credentials (GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve production instance id (by tags)
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          instance_ids="$(aws ec2 describe-instances \
+            --region "${AWS_REGION}" \
+            --filters \
+              "Name=tag:App,Values=${APP_TAG_VALUE}" \
+              "Name=tag:Environment,Values=production" \
+              "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query "Reservations[].Instances[].InstanceId" \
+            --output text)"
+
+          if [ -z "${instance_ids}" ]; then
+            echo "No production instances found for App=${APP_TAG_VALUE}, Environment=production"
+            exit 1
+          fi
+
+          if [ "$(echo "${instance_ids}" | wc -w | tr -d ' ')" != "1" ]; then
+            echo "Expected exactly 1 production instance, found: ${instance_ids}"
+            exit 1
+          fi
+
+          instance_id="${instance_ids}"
+          echo "instance_id=${instance_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure production instance is running
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+        run: |
+          set -euo pipefail
+
+          state="$(aws ec2 describe-instances \
+            --region "${AWS_REGION}" \
+            --instance-ids "${INSTANCE_ID}" \
+            --query "Reservations[0].Instances[0].State.Name" \
+            --output text)"
+
+          echo "Production instance state: ${state}"
+
+          if [ "${state}" = "stopping" ]; then
+            aws ec2 wait instance-stopped --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
+            state="stopped"
+          fi
+
+          if [ "${state}" = "stopped" ]; then
+            aws ec2 start-instances --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}" >/dev/null
+          fi
+
+          aws ec2 wait instance-running --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
+          aws ec2 wait instance-status-ok --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
+
+      - name: Sync BOT_TOKEN to SSM Parameter Store (SecureString)
+        shell: bash
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${BOT_TOKEN}"
+
+          aws ssm put-parameter \
+            --region "${AWS_REGION}" \
+            --name "${BOT_TOKEN_PARAMETER_NAME}" \
+            --type "SecureString" \
+            --overwrite \
+            --value "${BOT_TOKEN}" >/dev/null
+
+      - name: Deploy production via SSM RunCommand (GitHub Release artifact)
+        id: ssm
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+          GITHUB_REPO: ${{ github.repository }}
+          RELEASE_TAG_FROM_EVENT: ${{ github.event.release.tag_name }}
+          RELEASE_TAG_FROM_INPUT: ${{ github.event.inputs.release_tag }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            release_tag="${RELEASE_TAG_FROM_EVENT}"
+          else
+            release_tag="${RELEASE_TAG_FROM_INPUT}"
+          fi
+
+          if [ -z "${release_tag}" ]; then
+            echo "Unable to resolve release tag to deploy."
+            exit 1
+          fi
+
+          deploy_script="$(cat <<SCRIPT
+          set -euo pipefail
+
+          DEPLOY_ROOT="/opt/daily-bible-verse-bot"
+          ENVIRONMENT="production"
+          GITHUB_REPO="${GITHUB_REPO}"
+          RELEASE_TAG="${release_tag}"
+          GIT_SHA="${GIT_SHA}"
+	          TOKEN_PARAM="${BOT_TOKEN_PARAMETER_NAME}"
+
+	          ASSET_NAME="daily-bible-verse-bot-\${RELEASE_TAG}.tar.gz"
+	          ARTIFACT_URL="https://github.com/\${GITHUB_REPO}/releases/download/\${RELEASE_TAG}/\${ASSET_NAME}"
+	          ARCHIVE_URL="https://github.com/\${GITHUB_REPO}/archive/refs/tags/\${RELEASE_TAG}.tar.gz"
+
+	          WORK_DIR="/tmp/dbv-release"
+	          rm -rf "\${WORK_DIR}"
+	          mkdir -p "\${WORK_DIR}"
+	          cd "\${WORK_DIR}"
+
+	          echo "Downloading release asset: \${ARTIFACT_URL}"
+	          if curl -fL "\${ARTIFACT_URL}" -o "\${ASSET_NAME}"; then
+	            tar -xzf "\${ASSET_NAME}" -C "\${WORK_DIR}"
+	            DEPLOY_SCRIPT_PATH="\${WORK_DIR}/scripts/deploy/ssm-deploy.sh"
+	          else
+	            echo "Release asset download failed; falling back to repo archive: \${ARCHIVE_URL}"
+	            curl -fL "\${ARCHIVE_URL}" -o source.tar.gz
+	            tar -xzf source.tar.gz -C "\${WORK_DIR}"
+	            src_dir="$(ls -d "\${WORK_DIR}"/*/ | head -n 1 || true)"
+	            if [ -z "\${src_dir}" ]; then
+	              echo "Unable to locate extracted source directory." >&2
+	              exit 1
+	            fi
+	            DEPLOY_SCRIPT_PATH="\${src_dir}scripts/deploy/ssm-deploy.sh"
+	          fi
+
+	          bash "\${DEPLOY_SCRIPT_PATH}" \
+	            --deploy-root "\${DEPLOY_ROOT}" \
+	            --environment "\${ENVIRONMENT}" \
+	            --github-repo "\${GITHUB_REPO}" \
+	            --release-tag "\${RELEASE_TAG}" \
+	            --git-sha "\${GIT_SHA}" \
+	            --token-parameter "\${TOKEN_PARAM}"
+SCRIPT
+	          )"
+
+          script_b64="$(printf '%s' "${deploy_script}" | base64 -w0)"
+
+          jq -n \
+            --arg instanceId "${INSTANCE_ID}" \
+            --arg comment "DailyBibleVerseBot production deploy ${release_tag}" \
+            --arg scriptB64 "${script_b64}" \
+            '{
+              DocumentName: "AWS-RunShellScript",
+              InstanceIds: [$instanceId],
+              Comment: $comment,
+              Parameters: {
+                commands: [
+                  "set -euo pipefail",
+                  "printf '\''%s'\'' \"" + $scriptB64 + "\" | base64 -d > /tmp/dbv_deploy.sh",
+                  "chmod +x /tmp/dbv_deploy.sh",
+                  "/tmp/dbv_deploy.sh"
+                ]
+              }
+            }' > ssm-input.json
+
+          command_id="$(aws ssm send-command \
+            --region "${AWS_REGION}" \
+            --cli-input-json file://ssm-input.json \
+            --query "Command.CommandId" \
+            --output text)"
+
+          echo "command_id=${command_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSM command + surface output
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+          COMMAND_ID: ${{ steps.ssm.outputs.command_id }}
+        run: |
+          set -euo pipefail
+
+          set +e
+          aws ssm wait command-executed --region "${AWS_REGION}" --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}"
+          wait_exit=$?
+          set -e
+
+          status="$(aws ssm get-command-invocation \
+            --region "${AWS_REGION}" \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "Status" \
+            --output text)"
+
+          stdout="$(aws ssm get-command-invocation \
+            --region "${AWS_REGION}" \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "StandardOutputContent" \
+            --output text)"
+
+          stderr="$(aws ssm get-command-invocation \
+            --region "${AWS_REGION}" \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "StandardErrorContent" \
+            --output text)"
+
+          echo "SSM status: ${status}"
+          echo "${stdout}"
+          if [ -n "${stderr}" ] && [ "${stderr}" != "None" ]; then
+            echo "${stderr}" >&2
+          fi
+
+          if [ "${status}" != "Success" ] || [ "${wait_exit}" -ne 0 ]; then
+            exit 1
+          fi
