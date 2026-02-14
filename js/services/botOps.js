@@ -2,6 +2,7 @@ const {
   ChannelType,
   EmbedBuilder,
 } = require('discord.js');
+const { logger } = require('../logger.js');
 const { getBuildInfo } = require('./buildInfo.js');
 const { issueTrackerUrl } = require('../config.js');
 const {
@@ -13,6 +14,13 @@ const BOT_STATUS_MARKER = '[dbvb-status-message]';
 const BOT_STATUS_TITLE = 'Daily Bible Verse Bot Status';
 const DEFAULT_ISSUE_TRACKER_URL =
   'https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot/issues/new';
+
+// Discord embed limits (v14) that matter for runtime safety:
+// - field.value max length: 1024
+// - embed description max length: 4096
+// - total embed size max: 6000
+// We keep per-field truncation conservative so operational logging never crashes the bot.
+const DISCORD_EMBED_FIELD_VALUE_MAX = 1024;
 
 function formatDuration(milliseconds) {
   const totalSeconds = Math.floor(milliseconds / 1000);
@@ -64,12 +72,10 @@ function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, st
     `- Timestamp (UTC): ${new Date().toISOString()}`,
     '',
     '### Summary',
-    truncateText(errorSummary || 'Unknown error', 600),
+    truncateText(errorSummary || 'Unknown error', 400),
     '',
-    '### Stack snippet',
-    '```',
-    truncateText(stackSnippet || 'No stack available', 700),
-    '```',
+    '### Stack trace',
+    '_See Discord #bot-logs or container logs for stack trace._',
     '',
     '_Created from Discord #bot-logs._',
   ].join('\n');
@@ -98,12 +104,34 @@ function findTextChannelByName(guild, channelName) {
   );
 }
 
+async function ensureChannelsFetched(guild) {
+  if (!guild?.channels) {
+    return;
+  }
+
+  if (typeof guild.channels.fetch !== 'function') {
+    return;
+  }
+
+  try {
+    await guild.channels.fetch();
+  } catch {
+    // Ignore. Missing permissions or transient REST errors should never crash the bot.
+  }
+}
+
 async function getBotLogsChannel(client, guildId = TARGET_DEV_GUILD_ID) {
   const guild = getGuildFromClient(client, guildId);
   if (!guild) {
     return null;
   }
 
+  const cached = findTextChannelByName(guild, CHANNEL_NAMES.botLogs);
+  if (cached) {
+    return cached;
+  }
+
+  await ensureChannelsFetched(guild);
   return findTextChannelByName(guild, CHANNEL_NAMES.botLogs);
 }
 
@@ -113,6 +141,12 @@ async function getBotStatusChannel(client, guildId = TARGET_DEV_GUILD_ID) {
     return null;
   }
 
+  const cached = findTextChannelByName(guild, CHANNEL_NAMES.botStatus);
+  if (cached) {
+    return cached;
+  }
+
+  await ensureChannelsFetched(guild);
   return findTextChannelByName(guild, CHANNEL_NAMES.botStatus);
 }
 
@@ -185,34 +219,77 @@ async function upsertBotStatusMessage(client, guildId = TARGET_DEV_GUILD_ID) {
   });
 }
 
-function buildErrorLogPayload({ context, userTag, commandName, error }) {
-  const errorSummary = truncateText(error?.message || String(error), 400);
-  const stackSnippet = truncateText(error?.stack || 'No stack available', 900);
-  const issueCreationUrl = buildIssueCreationUrl({
-    context,
-    commandName,
-    userTag,
-    errorSummary,
-    stackSnippet,
-  });
-
-  const embed = new EmbedBuilder()
-    .setTitle('Bot Error Event')
-    .setColor('#c0392b')
-    .setTimestamp()
-    .addFields(
-      { name: 'Context', value: context || 'runtime', inline: true },
-      { name: 'Command', value: commandName || 'N/A', inline: true },
-      { name: 'User', value: userTag || 'N/A', inline: true },
-      { name: 'Summary', value: errorSummary || 'Unknown error' },
-      { name: 'Stack', value: `\`\`\`\n${stackSnippet}\n\`\`\`` },
-      { name: 'Issue', value: `[Create GitHub issue](${issueCreationUrl})` }
-    );
-
-  return { embeds: [embed] };
+function safeEmbedFieldValue(value) {
+  return truncateText(value, DISCORD_EMBED_FIELD_VALUE_MAX);
 }
 
+function buildErrorLogPayload({ context, userTag, commandName, origin, error }) {
+  try {
+    const errorSummary = safeEmbedFieldValue(error?.message || String(error));
+    const stackSnippet = truncateText(
+      error?.stack || 'No stack available',
+      // Keep below 1024 once we add code fences and newlines.
+      850
+    );
+
+    const issueCreationUrl = buildIssueCreationUrl({
+      context,
+      commandName,
+      userTag,
+      errorSummary,
+      stackSnippet,
+    });
+
+    const normalizedIssueUrl =
+      issueCreationUrl && issueCreationUrl.length <= 900
+        ? issueCreationUrl
+        : normalizeIssueTrackerUrl(issueTrackerUrl);
+
+    const issueFieldValue = safeEmbedFieldValue(
+      `[Create GitHub issue](${normalizedIssueUrl})`
+    );
+
+    const embed = new EmbedBuilder()
+      .setTitle('Bot Error Event')
+      .setColor('#c0392b')
+      .setTimestamp()
+      .addFields(
+        { name: 'Context', value: safeEmbedFieldValue(context || 'runtime'), inline: true },
+        { name: 'Command', value: safeEmbedFieldValue(commandName || 'N/A'), inline: true },
+        { name: 'User', value: safeEmbedFieldValue(userTag || 'N/A'), inline: true },
+        ...(origin
+          ? [{ name: 'Origin', value: safeEmbedFieldValue(origin), inline: false }]
+          : []),
+        { name: 'Summary', value: errorSummary || 'Unknown error' },
+        { name: 'Stack', value: safeEmbedFieldValue(`\`\`\`\n${stackSnippet}\n\`\`\``) },
+        { name: 'Issue', value: issueFieldValue }
+      );
+
+    return { embeds: [embed] };
+  } catch (buildError) {
+    // Never allow operational logging to crash the bot.
+    const fallback = truncateText(
+      `Bot error: ${context || 'runtime'} - ${commandName || 'N/A'} - ${
+        error?.message || String(error)
+      }`,
+      1900
+    );
+    return { content: fallback };
+  }
+}
+
+const discordLogCircuit = {
+  consecutiveFailures: 0,
+  disabledUntilMs: 0,
+  lastWarningAtMs: 0,
+};
+
 async function sendBotLogMessage(client, guildId, payload) {
+  const now = Date.now();
+  if (discordLogCircuit.disabledUntilMs > now) {
+    return false;
+  }
+
   try {
     const botLogsChannel = await getBotLogsChannel(client, guildId);
     if (!botLogsChannel) {
@@ -220,8 +297,29 @@ async function sendBotLogMessage(client, guildId, payload) {
     }
 
     await botLogsChannel.send(payload);
+    discordLogCircuit.consecutiveFailures = 0;
     return true;
   } catch (error) {
+    discordLogCircuit.consecutiveFailures += 1;
+
+    if (discordLogCircuit.consecutiveFailures >= 3) {
+      const exponent = Math.min(6, discordLogCircuit.consecutiveFailures - 3);
+      const cooldownMs = Math.min(30 * 60_000, 60_000 * 2 ** exponent);
+      discordLogCircuit.disabledUntilMs = now + cooldownMs;
+    }
+
+    // Emit a throttled local warning so missing Discord log permissions don't silently
+    // hide operational failures.
+    if (now - discordLogCircuit.lastWarningAtMs > 60_000) {
+      discordLogCircuit.lastWarningAtMs = now;
+      const until = discordLogCircuit.disabledUntilMs > now
+        ? `; circuit open for ${Math.round((discordLogCircuit.disabledUntilMs - now) / 1000)}s`
+        : '';
+      logger.warn(
+        `Failed to send bot log message to Discord (${discordLogCircuit.consecutiveFailures} consecutive failures)${until}: ${error?.message || error}`
+      );
+    }
+
     return false;
   }
 }
@@ -229,14 +327,18 @@ async function sendBotLogMessage(client, guildId, payload) {
 async function logCommandError(interaction, error, summary) {
   const userTag = `${interaction.user.username} (${interaction.user.id})`;
   const commandName = `/${interaction.commandName || 'unknown'}`;
+  const origin = interaction.guild
+    ? `guild=${interaction.guild.name} (${interaction.guildId}), channel=${interaction.channel?.name || interaction.channelId || 'unknown'}`
+    : `DM channel=${interaction.channelId || 'unknown'}`;
 
   return sendBotLogMessage(
     interaction.client,
-    interaction.guildId || TARGET_DEV_GUILD_ID,
+    TARGET_DEV_GUILD_ID,
     buildErrorLogPayload({
       context: summary || 'command',
       userTag,
       commandName,
+      origin,
       error,
     })
   );
