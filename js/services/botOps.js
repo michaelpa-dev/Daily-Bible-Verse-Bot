@@ -336,4 +336,7 @@ module.exports = {
   sendBotLogMessage,
   truncateText,
   upsertBotStatusMessage,
+  __private: {
+    buildErrorLogPayload,
+  },
 };

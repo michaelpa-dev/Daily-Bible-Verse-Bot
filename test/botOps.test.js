@@ -3,11 +3,14 @@ const assert = require('node:assert/strict');
 const {
   BOT_STATUS_MARKER,
   BOT_STATUS_TITLE,
+  __private,
   buildBotStatusEmbed,
   buildBootstrapSummaryMessage,
   buildIssueCreationUrl,
   truncateText,
 } = require('../js/services/botOps.js');
+
+const { buildErrorLogPayload } = __private;
 
 test('truncateText keeps short strings and truncates long strings', () => {
   assert.equal(truncateText('abc', 10), 'abc');
@@ -60,4 +63,28 @@ test('buildBotStatusEmbed uses embed format with marker footer', () => {
   assert.equal(embed.data.footer?.text, BOT_STATUS_MARKER);
   assert.ok(Array.isArray(embed.data.fields));
   assert.ok(embed.data.fields.some((field) => field.name === 'Uptime'));
+});
+
+test('buildErrorLogPayload truncates fields to avoid embed validation errors', () => {
+  const error = new Error('x'.repeat(8000));
+  error.stack = `Error: ${'y'.repeat(8000)}`;
+
+  const payload = buildErrorLogPayload({
+    context: 'runtime',
+    userTag: 'tester (123)',
+    commandName: '/unit-test',
+    error,
+    correlationId: 'corr-123',
+  });
+
+  assert.ok(payload);
+  assert.ok(payload.embeds || payload.content);
+
+  if (payload.embeds) {
+    const embed = payload.embeds[0];
+    const fields = embed?.data?.fields || [];
+    const issueField = fields.find((field) => field.name === 'Issue');
+    assert.ok(issueField);
+    assert.ok(issueField.value.length <= 1024);
+  }
 });
