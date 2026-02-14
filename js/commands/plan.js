@@ -3,14 +3,14 @@ const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js')
 const { addCommandExecution } = require('../db/statsDB.js');
 const { getPlan, getPlanById, setPlanStatus, skipDays, upsertPlan } = require('../db/planDB.js');
 const { logger } = require('../logger.js');
-const { PLAN_TYPES, buildTemplatePlan, normalizePace, getReadingForDay, buildReferenceLabel } = require('../services/planEngine.js');
+const { PLAN_TYPES, getReadingForDay, buildReferenceLabel } = require('../services/planEngine.js');
 const { refreshPlanSchedules } = require('../services/planScheduler.js');
 const { paginateLines } = require('../services/pagination.js');
 const { createPaginatedMessage } = require('../services/paginationInteractions.js');
 const { fetchPassageForBookChapter } = require('../services/bibleApiWeb.js');
 const { formatPassageLines } = require('../services/passageFormatter.js');
 const { logCommandError } = require('../services/botOps.js');
-const { normalizeBookId, getBookById } = require('../constants/books.js');
+const { normalizeBookId } = require('../constants/books.js');
 
 const DEFAULT_TIMEZONE = 'America/New_York';
 const DEFAULT_POST_TIME = '08:00';
@@ -311,8 +311,9 @@ module.exports = {
           : defaults.scope;
 
         const booksRaw = interaction.options.getString('books');
+        const parsedBooks = scope === 'SpecificBooks' ? parseBooksList(booksRaw) : [];
         const books = scope === 'SpecificBooks'
-          ? (parseBooksList(booksRaw).length > 0 ? parseBooksList(booksRaw) : defaults.books)
+          ? (parsedBooks.length > 0 ? parsedBooks : defaults.books)
           : defaults.books;
 
         const paceOverride = resolvePace({

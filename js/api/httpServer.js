@@ -25,7 +25,13 @@ function parseOffset(query) {
     return undefined;
   }
   const value = Number(raw);
-  return Number.isFinite(value) ? value : undefined;
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value < 0 || value > Number.MAX_SAFE_INTEGER) {
+    return undefined;
+  }
+  return Math.floor(value);
 }
 
 function createHttpServer(options = {}) {

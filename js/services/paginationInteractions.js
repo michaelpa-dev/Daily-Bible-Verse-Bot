@@ -59,6 +59,19 @@ function buildPaginationComponents(session) {
   const total = session.pages.length;
   const pageIndex = Math.min(Math.max(session.pageIndex, 0), total - 1);
 
+  const extras = Array.isArray(session.extraComponents) ? session.extraComponents : [];
+
+  if (total <= 1) {
+    // Single page: no need for Prev/Next, but keep Close + any extra components (e.g., plan completion buttons).
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(buildCustomId(session.id, 'close'))
+        .setLabel('Close')
+        .setStyle(ButtonStyle.Danger),
+    );
+    return [row, ...extras];
+  }
+
   const prevDisabled = pageIndex <= 0;
   const nextDisabled = pageIndex >= total - 1;
 
@@ -79,7 +92,6 @@ function buildPaginationComponents(session) {
       .setStyle(ButtonStyle.Danger),
   );
 
-  const extras = Array.isArray(session.extraComponents) ? session.extraComponents : [];
   return [row, ...extras];
 }
 
@@ -89,7 +101,7 @@ function createPaginatedMessage(options) {
   return {
     session,
     embed: buildPaginationEmbed(session),
-    components: session.pages.length > 1 ? buildPaginationComponents(session) : [],
+    components: buildPaginationComponents(session),
   };
 }
 

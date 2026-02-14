@@ -125,7 +125,8 @@ async function postPlanTick(client, planId, options = {}) {
     const components = buildGuildPlanComponents(plan.id, plan.dayIndex, localDate);
 
     const lateSuffix = options.late ? ' (late)' : '';
-    await channel.send({ embeds: [embed.setTitle(`${embed.data.title}${lateSuffix}`)], components });
+    embed.setTitle(`Reading Plan: ${plan.planType}${lateSuffix}`);
+    await channel.send({ embeds: [embed], components });
   } else {
     // User plan: DM the full reading (with pagination).
     const { sendUserPlanReading } = require('./planInteractions.js');
