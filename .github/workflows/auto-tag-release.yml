@@ -142,14 +142,14 @@ jobs:
 
           # Wait for the tag ref to be visible via the API to avoid race conditions.
           for i in $(seq 1 10); do
-            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${NEXT_TAG}" >/dev/null 2>&1; then
+            if gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${NEXT_TAG}" >/dev/null 2>&1; then
               break
             fi
             echo "Waiting for tag ${NEXT_TAG} to be visible (attempt ${i}/10)..."
             sleep 3
           done
 
-          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${NEXT_TAG}" >/dev/null 2>&1; then
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${NEXT_TAG}" >/dev/null 2>&1; then
             echo "Tag ${NEXT_TAG} not visible via API; refusing to dispatch build." >&2
             exit 1
           fi
