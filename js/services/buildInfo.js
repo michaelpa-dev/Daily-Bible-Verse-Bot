@@ -1,40 +1,21 @@
-const { execSync } = require('child_process');
-const { version } = require('../config.js');
+const { getVersionInfo } = require('./versionInfo.js');
 
-let cachedGitSha = null;
+function getBuildInfo(options = {}) {
+  const info = getVersionInfo(options);
 
-function resolveGitSha() {
-  if (cachedGitSha !== null) {
-    return cachedGitSha;
-  }
+  // Keep backward compatibility with older call sites:
+  // - version historically meant "semantic version", but in practice the deploy system is tag-driven
+  //   (vX.Y.Z for production, canary-<sha> for canary). Prefer the release tag when available.
+  const version = info.releaseTag || info.packageVersion || 'unknown';
 
-  const environmentSha =
-    process.env.GIT_SHA ||
-    process.env.COMMIT_SHA ||
-    process.env.GITHUB_SHA ||
-    '';
-  if (environmentSha) {
-    cachedGitSha = String(environmentSha).slice(0, 12);
-    return cachedGitSha;
-  }
-
-  try {
-    const sha = execSync('git rev-parse --short HEAD', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-      encoding: 'utf8',
-    }).trim();
-    cachedGitSha = sha || 'unknown';
-  } catch (error) {
-    cachedGitSha = 'unknown';
-  }
-
-  return cachedGitSha;
-}
-
-function getBuildInfo() {
   return {
     version,
-    gitSha: resolveGitSha(),
+    packageVersion: info.packageVersion || 'unknown',
+    releaseTag: info.releaseTag || 'unknown',
+    gitSha: info.gitSha || 'unknown',
+    builtAt: info.builtAt,
+    deployedAt: info.deployedAt,
+    runtimeEnvironment: info.runtimeEnvironment || 'unknown',
   };
 }
 
