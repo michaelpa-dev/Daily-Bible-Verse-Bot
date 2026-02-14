@@ -1,6 +1,9 @@
 name: Deploy Production (EC2 via SSM)
 
 on:
+  push:
+    branches:
+      - master
   release:
     types:
       - published
@@ -26,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       ${{
+        github.event_name == 'push' ||
         github.event_name == 'workflow_dispatch' ||
         (github.event_name == 'release' && github.event.release.prerelease == false)
       }}
@@ -121,7 +125,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+          source_ref="${GITHUB_SHA}"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            # For production merges to master, deploy the exact commit SHA via the GitHub source archive.
+            # This avoids creating a release for every merge commit while keeping GitHub as the artifact source.
+            release_tag="master-${GITHUB_SHA}"
+          elif [ "${GITHUB_EVENT_NAME}" = "release" ]; then
             release_tag="${RELEASE_TAG_FROM_EVENT}"
           else
             release_tag="${RELEASE_TAG_FROM_INPUT}"
@@ -133,6 +142,7 @@ jobs:
           fi
 
           echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "source_ref=${source_ref}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve GitHub release download URL (private-safe)
         id: artifact
@@ -141,6 +151,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
           GITHUB_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          SOURCE_REF: ${{ steps.meta.outputs.source_ref }}
         run: |
           set -euo pipefail
           echo "::add-mask::${GITHUB_TOKEN}"
@@ -148,31 +159,41 @@ jobs:
           api="https://api.github.com"
           asset_name="daily-bible-verse-bot-${RELEASE_TAG}.tar.gz"
 
-          release_json="$(curl -fsSL \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${api}/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}")" || {
-              echo "Failed to fetch release metadata for tag ${RELEASE_TAG}."
-              echo "If this repo is private and the default GITHUB_TOKEN cannot read releases, set env secret GH_RELEASE_TOKEN (classic PAT with repo scope) in the 'production' environment."
-              exit 1
-            }
-
-          asset_id="$(printf '%s' "${release_json}" | jq -r --arg name "${asset_name}" '.assets[] | select(.name==$name) | .id' | head -n 1 || true)"
-
-          download_kind="release_asset"
-          if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
-            echo "Release asset ${asset_name} not found for ${RELEASE_TAG}; falling back to repo tarball."
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            # Pushes to master deploy from the repository source archive for the exact commit.
+            # This keeps artifacts sourced from GitHub while avoiding release churn for production.
             download_kind="source_archive"
             asset_name="source.tar.gz"
-
             headers="$(curl -sS -D - -o /dev/null \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${api}/repos/${GITHUB_REPO}/tarball/${RELEASE_TAG}")"
+              "${api}/repos/${GITHUB_REPO}/tarball/${SOURCE_REF}")"
           else
-            headers="$(curl -sS -D - -o /dev/null \
+            release_json="$(curl -fsSL \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/octet-stream" \
-              "${api}/repos/${GITHUB_REPO}/releases/assets/${asset_id}")"
+              -H "Accept: application/vnd.github+json" \
+              "${api}/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}")" || {
+                echo "Failed to fetch release metadata for tag ${RELEASE_TAG}."
+                echo "If this repo is private and the default GITHUB_TOKEN cannot read releases, set env secret GH_RELEASE_TOKEN (classic PAT with repo scope) in the 'production' environment."
+                exit 1
+              }
+
+            asset_id="$(printf '%s' "${release_json}" | jq -r --arg name "${asset_name}" '.assets[] | select(.name==$name) | .id' | head -n 1 || true)"
+
+            download_kind="release_asset"
+            if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
+              echo "Release asset ${asset_name} not found for ${RELEASE_TAG}; falling back to repo tarball."
+              download_kind="source_archive"
+              asset_name="source.tar.gz"
+
+              headers="$(curl -sS -D - -o /dev/null \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                "${api}/repos/${GITHUB_REPO}/tarball/${RELEASE_TAG}")"
+            else
+              headers="$(curl -sS -D - -o /dev/null \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "Accept: application/octet-stream" \
+                "${api}/repos/${GITHUB_REPO}/releases/assets/${asset_id}")"
+            fi
           fi
 
           download_url="$(printf '%s' "${headers}" | awk -F': ' 'tolower($1)=="location" {print $2}' | tail -n 1 | tr -d '\r')"
