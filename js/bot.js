@@ -21,6 +21,7 @@ const {
   upsertBotStatusMessage,
 } = require('./services/botOps.js');
 const { createHttpServer } = require('./api/httpServer.js');
+const { handlePaginationInteraction } = require('./services/paginationInteractions.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
 const BOT_STATUS_SCHEDULE = '*/5 * * * * *';
@@ -175,6 +176,22 @@ client.on(Events.GuildDelete, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isButton()) {
+    try {
+      const handled = await handlePaginationInteraction(interaction);
+      if (handled) {
+        return;
+      }
+    } catch (error) {
+      logger.error('Button interaction handler failed', error);
+      // Avoid throwing; fall through so Discord sees an error response.
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'An error occurred handling that interaction.', ephemeral: true });
+      }
+      return;
+    }
+  }
+
   if (!interaction.isChatInputCommand()) {
     return;
   }
