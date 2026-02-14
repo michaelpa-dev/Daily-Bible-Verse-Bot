@@ -21,6 +21,7 @@ const { BOOKS } = require('../js/constants/books.js');
 const OUTPUT_PATH = path.join(__dirname, '..', 'js', 'data', 'webVerseCounts.json');
 const API_BASE = 'https://bible-api.com/';
 const TRANSLATION = 'web';
+const FORCE = process.argv.includes('--force');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -51,6 +52,87 @@ async function fetchJson(url) {
   };
 }
 
+function buildUrlForRef(ref) {
+  return `${API_BASE}${encodeURIComponent(ref)}?translation=${TRANSLATION}`;
+}
+
+async function fetchRef(ref) {
+  const url = buildUrlForRef(ref);
+
+  while (true) {
+    const response = await fetchJson(url);
+    if (response.ok) {
+      return response;
+    }
+
+    if (response.status === 429) {
+      const retryAfterSeconds = Number(response.retryAfter || 0);
+      const waitMs = retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : 10000;
+      console.warn(`  WARN ${ref}: rate limited (429). Waiting ${waitMs}ms...`);
+      await sleep(waitMs);
+      continue;
+    }
+
+    return response;
+  }
+}
+
+function looksLikeVerseLookupFromChapterRequest(requestedChapter, responseJson) {
+  const reference = String(responseJson?.reference || '');
+  const verses = Array.isArray(responseJson?.verses) ? responseJson.verses : [];
+  if (!reference.includes(':')) {
+    return false;
+  }
+  if (verses.length !== 1) {
+    return false;
+  }
+
+  const chapter = Number(verses[0]?.chapter);
+  const verse = Number(verses[0]?.verse);
+  return chapter === 1 && verse === requestedChapter;
+}
+
+async function verseExistsForSingleChapterBook(bookApiName, verseNumber) {
+  const verse = Number(verseNumber);
+  if (!Number.isFinite(verse) || verse <= 0) {
+    return false;
+  }
+
+  const ref = `${bookApiName} 1:${verse}`;
+  const response = await fetchRef(ref);
+  return response.ok;
+}
+
+async function findMaxVerseForSingleChapterBook(bookApiName) {
+  // Exponential search to find an upper bound, then binary search for the last verse.
+  let lo = 1;
+  let hi = 1;
+
+  while (await verseExistsForSingleChapterBook(bookApiName, hi)) {
+    lo = hi;
+    hi *= 2;
+
+    // Safety bound: no 1-chapter book in the Protestant canon is anywhere near this size.
+    if (hi > 500) {
+      break;
+    }
+
+    await sleep(150);
+  }
+
+  while (lo + 1 < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (await verseExistsForSingleChapterBook(bookApiName, mid)) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+    await sleep(150);
+  }
+
+  return lo;
+}
+
 function writeProgress(data) {
   fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(data, null, 2) + '\n', 'utf8');
@@ -71,6 +153,9 @@ function loadExisting() {
 async function main() {
   console.log(`Generating WEB verse counts via bible-api.com -> ${OUTPUT_PATH}`);
   console.log('This will take a few minutes (1189 chapters). Please be polite to the API.');
+  if (FORCE) {
+    console.log('Force mode enabled: regenerating all books in the output file.');
+  }
 
   const existing = loadExisting();
   const output = existing && existing.translationId === TRANSLATION
@@ -83,7 +168,7 @@ async function main() {
       };
 
   for (const book of BOOKS) {
-    if (output.books[book.id] && output.books[book.id].chapters) {
+    if (!FORCE && output.books[book.id] && output.books[book.id].chapters) {
       continue;
     }
 
@@ -94,18 +179,9 @@ async function main() {
 
     while (chapter <= 200) {
       const ref = `${book.apiName} ${chapter}`;
-      const url = `${API_BASE}${encodeURIComponent(ref)}?translation=${TRANSLATION}`;
 
-      const response = await fetchJson(url);
+      const response = await fetchRef(ref);
       if (!response.ok) {
-        if (response.status === 429) {
-          const retryAfterSeconds = Number(response.retryAfter || 0);
-          const waitMs = retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : 10000;
-          console.warn(`  WARN chapter ${chapter}: rate limited (429). Waiting ${waitMs}ms...`);
-          await sleep(waitMs);
-          continue;
-        }
-
         consecutiveFailures += 1;
 
         if (response.status === 404 || response.status === 400) {
@@ -129,6 +205,27 @@ async function main() {
       const verses = Array.isArray(response.json?.verses) ? response.json.verses : null;
       if (!verses || verses.length === 0) {
         console.warn(`  WARN chapter ${chapter}: no verses array`);
+        break;
+      }
+
+      // Single-chapter books are ambiguous on bible-api.com:
+      // "Obadiah 1" returns verse 1 (reference "Obadiah 1:1") rather than the chapter.
+      // Detect that case and compute the verse count by probing verses directly.
+      if (looksLikeVerseLookupFromChapterRequest(chapter, response.json)) {
+        if (chapter !== 1) {
+          break;
+        }
+
+        console.log('  Detected single-chapter book behavior. Finding verse count...');
+        const maxVerse = await findMaxVerseForSingleChapterBook(book.apiName);
+        chapters['1'] = maxVerse;
+        console.log(`  Single chapter total verses: ${maxVerse}`);
+        break;
+      }
+
+      const returnedChapter = Number(verses[0]?.chapter);
+      if (Number.isFinite(returnedChapter) && returnedChapter !== chapter) {
+        console.warn(`  WARN chapter ${chapter}: api returned chapter ${returnedChapter}. Stopping.`);
         break;
       }
 
