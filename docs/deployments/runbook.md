@@ -4,7 +4,7 @@
 
 Trigger:
 
-- Any push to `master` runs `.github/workflows/build.yml` which publishes a prerelease:
+- Any push (including merged PRs) to `canary` runs `.github/workflows/build.yml` which publishes a prerelease:
   - Tag: `canary-<commit_sha>`
   - Asset: `daily-bible-verse-bot-canary-<commit_sha>.tar.gz`
 
@@ -27,18 +27,24 @@ Auto-stop:
 
 ## Production Deploy / Promotion
 
-Production deployments are release-driven and should be gated via GitHub environment approvals.
+Production deployments are **release-driven** and should be gated via GitHub environment approvals.
 
-Option A (recommended):
+Promotion flow:
 
-1. Create a git tag like `v0.2.1` on `master`.
-2. Push the tag.
-3. `build.yml` publishes a GitHub Release for that tag (asset: `daily-bible-verse-bot-v0.2.1.tar.gz`).
-4. `deploy-prod.yml` triggers on the release event and deploys to production.
+1. Work lands via PRs into `canary`.
+2. Canary deploy verifies on ephemeral canary EC2.
+3. Create a promotion PR from `canary` -> `master`.
+4. Apply exactly one release bump label to the promotion PR:
+   - `release:patch`, `release:minor`, or `release:major`
+5. Merge the PR to `master`.
+6. `auto-tag-release.yml` auto-creates a semver tag `vMAJOR.MINOR.PATCH` on the merge commit.
+7. The tag triggers `build.yml`, which publishes a **published** GitHub Release + asset (`daily-bible-verse-bot-vX.Y.Z.tar.gz`).
+8. `deploy-prod.yml` deploys production **only** from the published GitHub Release asset.
 
-Option B (rollback / manual deploy):
+Rollback / manual deploy:
 
 - Run `deploy-prod.yml` via `workflow_dispatch` and provide `release_tag` (e.g., `v0.2.0`).
+- The workflow validates the release is published and not a prerelease/draft.
 
 ## Rollback
 
@@ -54,6 +60,7 @@ Common checks:
   - Confirm `build.yml` created the expected release tag + asset.
   - Confirm `deploy-canary.yml` / `deploy-prod.yml` captured the SSM command output.
   - If a deploy fails to resolve the signed download URL for a private release asset, add a classic PAT with `repo` scope as `GH_RELEASE_TOKEN` in the relevant GitHub environment (`canary` / `production`).
+  - If a production deploy did not run for a tag push: ensure the tag corresponds to a published, non-prerelease GitHub Release.
 
 - SSM:
   - Look up the printed `CommandId` and inspect the invocation output:

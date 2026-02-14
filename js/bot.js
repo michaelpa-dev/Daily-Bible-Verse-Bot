@@ -20,6 +20,11 @@ const {
   logRuntimeError,
   upsertBotStatusMessage,
 } = require('./services/botOps.js');
+const { createHttpServer } = require('./api/httpServer.js');
+const { handlePaginationInteraction } = require('./services/paginationInteractions.js');
+const { handleReadInteraction } = require('./services/readSessions.js');
+const { handlePlanInteraction } = require('./services/planInteractions.js');
+const { initializePlanScheduler } = require('./services/planScheduler.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
 const BOT_STATUS_SCHEDULE = '*/5 * * * * *';
@@ -33,6 +38,7 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+let httpServer = null;
 
 function loadCommandModules() {
   const commandsPath = path.join(scriptDirectory, 'commands');
@@ -159,6 +165,12 @@ client.once(Events.ClientReady, async () => {
   await Promise.allSettled(guildRegistrations);
 
   scheduleRecurringJobs();
+
+  try {
+    await initializePlanScheduler(client);
+  } catch (error) {
+    logger.error('Failed to initialize reading plan scheduler', error);
+  }
 });
 
 client.on(Events.GuildCreate, async (guild) => {
@@ -173,6 +185,25 @@ client.on(Events.GuildDelete, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
+    try {
+      const handled =
+        (interaction.isButton() ? await handlePaginationInteraction(interaction) : false) ||
+        (interaction.isButton() ? await handlePlanInteraction(interaction) : false) ||
+        (await handleReadInteraction(interaction));
+      if (handled) {
+        return;
+      }
+    } catch (error) {
+      logger.error('Component interaction handler failed', error);
+      // Avoid throwing; fall through so Discord sees an error response.
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'An error occurred handling that interaction.', ephemeral: true });
+      }
+      return;
+    }
+  }
+
   if (!interaction.isChatInputCommand()) {
     return;
   }
@@ -204,10 +235,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
 async function shutdown() {
   try {
     client.destroy();
+    if (httpServer) {
+      await new Promise((resolve) => httpServer.close(resolve));
+      httpServer = null;
+    }
     await closeDatabase();
   } catch (error) {
     logger.warn(`Failed to close database cleanly: ${error}`);
   }
+}
+
+async function startHttpApiServer() {
+  const disabled = String(process.env.DISABLE_HTTP_API || '').toLowerCase() === 'true';
+  if (disabled) {
+    logger.info('HTTP API server disabled via DISABLE_HTTP_API=true');
+    return;
+  }
+
+  const bindHost = String(process.env.HTTP_BIND || '127.0.0.1').trim() || '127.0.0.1';
+  const portRaw = process.env.HTTP_PORT || process.env.PORT || '3000';
+  const port = Number(portRaw);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid HTTP port: ${portRaw}`);
+  }
+
+  httpServer = createHttpServer();
+  await new Promise((resolve) => httpServer.listen(port, bindHost, resolve));
+  logger.info(`HTTP API server listening on http://${bindHost}:${port}`);
 }
 
 async function runBot() {
@@ -218,6 +272,7 @@ async function runBot() {
   }
 
   loadCommandModules();
+  await startHttpApiServer();
   await client.login(botToken);
 }
 

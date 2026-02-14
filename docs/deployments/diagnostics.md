@@ -6,7 +6,7 @@ Before the current deployment overhaul, CI/CD used SSH-based deploys:
 
 - GitHub Actions connected to the EC2 host over SSH using a long-lived private key.
 - The deploy updated the server by doing `git pull` and rebuilding Docker.
-- Canary was deployed from a dedicated branch (`canary`), and production was deployed directly on pushes to `master`.
+- Canary was deployed from a dedicated branch (`canary`), and production was deployed directly on pushes to `master` (no release gating).
 
 Issues observed:
 
@@ -26,7 +26,8 @@ The deploy approach is now:
 - Artifact: GitHub Release asset (`tar.gz`) produced by `build.yml`.
 - Deploy: AWS SSM RunCommand (`AWS-RunShellScript`), no SSH required.
 - Private-safe artifact download: Deploy workflows resolve a short-lived signed download URL via GitHub API on the runner (auth via `GITHUB_TOKEN` or optional `GH_RELEASE_TOKEN`), and pass only that signed URL to EC2 (no GitHub token on EC2).
-- Canary: auto-start on pushes to `master` (via `workflow_run` chain), auto-stop after 4 hours since the last push.
+- Canary: auto-start on pushes to `canary` (via `workflow_run` chain), auto-stop after 4 hours since the last push.
+- Production: release-only deploys (published GitHub Release tag + asset).
 - AWS Auth for Actions: GitHub OIDC role with scoped permissions (no long-lived AWS keys in GitHub).
 - SSH ingress removed (security group has no inbound rules).
 

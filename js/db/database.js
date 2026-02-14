@@ -194,6 +194,32 @@ async function initializeDatabase() {
     );
   `);
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS reading_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_type TEXT NOT NULL CHECK (owner_type IN ('guild', 'user')),
+      owner_id TEXT NOT NULL,
+      channel_id TEXT,
+      plan_type TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      books_json TEXT NOT NULL DEFAULT '[]',
+      pace_type TEXT NOT NULL CHECK (pace_type IN ('chapters', 'verses', 'minutes')),
+      pace_value INTEGER NOT NULL,
+      timezone TEXT NOT NULL,
+      post_time TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      day_index INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'stopped')),
+      last_posted_on TEXT,
+      last_completed_on TEXT,
+      streak INTEGER NOT NULL DEFAULT 0,
+      catchup_mode TEXT NOT NULL DEFAULT 'none',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(owner_type, owner_id)
+    );
+  `);
+
   await db.run(
     `INSERT INTO stats (id, total_verses_sent, total_commands_executed, active_guilds)
      VALUES (1, 0, 0, 0)
