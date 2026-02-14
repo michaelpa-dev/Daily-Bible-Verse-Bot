@@ -7,6 +7,7 @@ const PROJECT_MODULES = [
   '../../js/db/subscribeDB.js',
   '../../js/db/statsDB.js',
   '../../js/db/planDB.js',
+  '../../js/services/planScheduler.js',
 ];
 
 function createTempDatabaseSandbox() {
