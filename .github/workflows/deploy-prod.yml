@@ -202,13 +202,9 @@ jobs:
 
           download_kind="release_asset"
           if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
-            echo "Release asset ${asset_name} not found for ${RELEASE_TAG}; falling back to repo tarball."
-            download_kind="source_archive"
-            asset_name="source.tar.gz"
-
-            headers="$(curl -sS -D - -o /dev/null \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${api}/repos/${GITHUB_REPO}/tarball/${RELEASE_TAG}")"
+            echo "Release asset ${asset_name} not found for ${RELEASE_TAG}."
+            echo "Production deployments are release-asset only; refusing to deploy." >&2
+            exit 1
           else
             headers="$(curl -sS -D - -o /dev/null \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
