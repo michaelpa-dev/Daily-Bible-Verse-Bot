@@ -1,10 +1,12 @@
 name: Deploy Production (EC2 via SSM)
 
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types:
       - published
-      - released
   workflow_dispatch:
     inputs:
       release_tag:
@@ -21,14 +23,75 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Gate (Release Only)
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.gate.outputs.should_deploy }}
+      release_tag: ${{ steps.gate.outputs.release_tag }}
+    steps:
+      - name: Resolve tag + verify published release exists
+        id: gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+
+          should_deploy="false"
+          release_tag=""
+
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            release_tag="${{ github.event.release.tag_name }}"
+            is_draft="${{ github.event.release.draft }}"
+            is_prerelease="${{ github.event.release.prerelease }}"
+
+            if [ "${is_draft}" = "false" ] && [ "${is_prerelease}" = "false" ]; then
+              should_deploy="true"
+            else
+              echo "Release ${release_tag} is draft/prerelease; production deploy is blocked."
+            fi
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            release_tag="${{ github.event.inputs.release_tag }}"
+          else
+            # push tag event
+            release_tag="${GITHUB_REF_NAME}"
+          fi
+
+          if [ -z "${release_tag}" ]; then
+            echo "release_tag is empty; refusing to deploy." >&2
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${should_deploy}" != "true" ]; then
+            # For tag pushes / manual deploys, only deploy if the tag corresponds to a *published* GitHub Release.
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" -H "Accept: application/vnd.github+json" 2>/dev/null || true)"
+            if [ -z "${release_json}" ]; then
+              echo "No GitHub Release found for tag ${release_tag}. (This is expected if the tag was just created and the release is still building.)"
+              should_deploy="false"
+            else
+              draft="$(printf '%s' "${release_json}" | jq -r '.draft // false')"
+              prerelease="$(printf '%s' "${release_json}" | jq -r '.prerelease // false')"
+
+              if [ "${draft}" = "false" ] && [ "${prerelease}" = "false" ]; then
+                should_deploy="true"
+              else
+                echo "Release for ${release_tag} is draft/prerelease; production deploy is blocked."
+                should_deploy="false"
+              fi
+            fi
+          fi
+
+          echo "should_deploy=${should_deploy}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+
   deploy:
     name: Deploy Production
     runs-on: ubuntu-latest
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'release' && github.event.release.prerelease == false)
-      }}
+    needs: [gate]
+    if: needs.gate.outputs.should_deploy == 'true'
     environment: production
     env:
       AWS_REGION: us-east-1
@@ -112,35 +175,13 @@ jobs:
             --overwrite \
             --value "${BOT_TOKEN}" >/dev/null
 
-      - name: Resolve release tag to deploy
-        id: meta
-        shell: bash
-        env:
-          RELEASE_TAG_FROM_EVENT: ${{ github.event.release.tag_name }}
-          RELEASE_TAG_FROM_INPUT: ${{ github.event.inputs.release_tag }}
-        run: |
-          set -euo pipefail
-
-          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
-            release_tag="${RELEASE_TAG_FROM_EVENT}"
-          else
-            release_tag="${RELEASE_TAG_FROM_INPUT}"
-          fi
-
-          if [ -z "${release_tag}" ]; then
-            echo "Unable to resolve release tag to deploy."
-            exit 1
-          fi
-
-          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
-
       - name: Resolve GitHub release download URL (private-safe)
         id: artifact
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
           GITHUB_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          RELEASE_TAG: ${{ needs.gate.outputs.release_tag }}
         run: |
           set -euo pipefail
           echo "::add-mask::${GITHUB_TOKEN}"
@@ -161,13 +202,9 @@ jobs:
 
           download_kind="release_asset"
           if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
-            echo "Release asset ${asset_name} not found for ${RELEASE_TAG}; falling back to repo tarball."
-            download_kind="source_archive"
-            asset_name="source.tar.gz"
-
-            headers="$(curl -sS -D - -o /dev/null \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${api}/repos/${GITHUB_REPO}/tarball/${RELEASE_TAG}")"
+            echo "Release asset ${asset_name} not found for ${RELEASE_TAG}."
+            echo "Production deployments are release-asset only; refusing to deploy." >&2
+            exit 1
           else
             headers="$(curl -sS -D - -o /dev/null \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
@@ -193,7 +230,7 @@ jobs:
         env:
           INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
           GITHUB_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          RELEASE_TAG: ${{ needs.gate.outputs.release_tag }}
           GIT_SHA: ${{ github.sha }}
           ASSET_NAME: ${{ steps.artifact.outputs.asset_name }}
           ARTIFACT_URL: ${{ steps.artifact.outputs.download_url }}

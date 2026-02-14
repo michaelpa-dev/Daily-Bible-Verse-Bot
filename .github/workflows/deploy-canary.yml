@@ -1,28 +1,25 @@
 name: Deploy Canary (Ephemeral EC2 via SSM)
 
 on:
-  workflow_run:
-    workflows: ["Build and Release"]
-    types:
-      - completed
+  push:
+    branches:
+      - canary
+  workflow_dispatch: {}
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: deploy-canary
+  # Serialize all canary deployments (shared EC2 target), but avoid collisions with the legacy
+  # default-branch workflow which also uses the `deploy-canary` concurrency group.
+  group: deploy-canary-v2
   cancel-in-progress: true
 
 jobs:
   deploy:
     name: Deploy Canary
     runs-on: ubuntu-latest
-    if: >-
-      ${{
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'master'
-      }}
     environment: canary
     env:
       AWS_REGION: us-east-1
@@ -129,7 +126,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
           GITHUB_REPO: ${{ github.repository }}
-          RELEASE_TAG: canary-${{ github.event.workflow_run.head_sha }}
+          RELEASE_TAG: canary-${{ github.sha }}
         run: |
           set -euo pipefail
           echo "::add-mask::${GITHUB_TOKEN}"
@@ -139,18 +136,62 @@ jobs:
 
           # Resolve the release asset ID so we can request a short-lived signed download URL.
           # This avoids 403/404 from unauthenticated downloads for private repos, and keeps tokens off EC2.
-          release_json="$(curl -fsSL \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${api}/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}")" || {
-              echo "Failed to fetch release metadata for tag ${RELEASE_TAG}."
-              echo "If this repo is private and the default GITHUB_TOKEN cannot read releases, set env secret GH_RELEASE_TOKEN (classic PAT with repo scope) in the 'canary' environment."
-              exit 1
-            }
+          release_url="${api}/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}"
+          release_json=""
+          for attempt in $(seq 1 40); do
+            http_code="$(curl -sS -o release.json -w "%{http_code}" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${release_url}" || true)"
+
+            if [ "${http_code}" = "200" ]; then
+              release_json="$(cat release.json)"
+              break
+            fi
+
+            if [ "${http_code}" = "404" ]; then
+              echo "Release ${RELEASE_TAG} not found yet (attempt ${attempt}/40). Waiting 15s..."
+              sleep 15
+              continue
+            fi
+
+            echo "Failed to fetch release metadata for tag ${RELEASE_TAG} (HTTP ${http_code})." >&2
+            cat release.json >&2 || true
+            echo "If this repo is private and the default GITHUB_TOKEN cannot read releases, set env secret GH_RELEASE_TOKEN (classic PAT with repo scope) in the 'canary' environment." >&2
+            exit 1
+          done
+
+          if [ -z "${release_json}" ]; then
+            echo "Timed out waiting for the canary release ${RELEASE_TAG} to be created." >&2
+            exit 1
+          fi
 
           asset_id="$(printf '%s' "${release_json}" | jq -r --arg name "${asset_name}" '.assets[] | select(.name==$name) | .id' | head -n 1 || true)"
 
           download_kind="release_asset"
+          if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
+            # Sometimes the release object exists before the asset finishes uploading.
+            for attempt in $(seq 1 20); do
+              echo "Release asset ${asset_name} not found yet (attempt ${attempt}/20). Waiting 10s..."
+              sleep 10
+
+              http_code="$(curl -sS -o release.json -w "%{http_code}" \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "${release_url}" || true)"
+              if [ "${http_code}" != "200" ]; then
+                echo "GitHub API returned HTTP ${http_code} while waiting for asset ${asset_name} (attempt ${attempt}/20)." >&2
+                continue
+              fi
+
+              release_json="$(cat release.json)"
+              asset_id="$(printf '%s' "${release_json}" | jq -r --arg name "${asset_name}" '.assets[] | select(.name==$name) | .id' | head -n 1 || true)"
+              if [ -n "${asset_id}" ] && [ "${asset_id}" != "null" ]; then
+                break
+              fi
+            done
+          fi
+
           if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
             echo "Release asset ${asset_name} not found for ${RELEASE_TAG}; falling back to repo tarball."
             download_kind="source_archive"
@@ -184,8 +225,8 @@ jobs:
         env:
           INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
           GITHUB_REPO: ${{ github.repository }}
-          RELEASE_TAG: canary-${{ github.event.workflow_run.head_sha }}
-          GIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_TAG: canary-${{ github.sha }}
+          GIT_SHA: ${{ github.sha }}
           ASSET_NAME: ${{ steps.artifact.outputs.asset_name }}
           ARTIFACT_URL: ${{ steps.artifact.outputs.download_url }}
           DOWNLOAD_KIND: ${{ steps.artifact.outputs.download_kind }}

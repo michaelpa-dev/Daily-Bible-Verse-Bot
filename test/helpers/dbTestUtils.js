@@ -6,6 +6,8 @@ const PROJECT_MODULES = [
   '../../js/db/database.js',
   '../../js/db/subscribeDB.js',
   '../../js/db/statsDB.js',
+  '../../js/db/planDB.js',
+  '../../js/services/planScheduler.js',
 ];
 
 function createTempDatabaseSandbox() {
@@ -41,11 +43,13 @@ function loadDbModulesForSandbox(sandbox) {
   const database = require('../../js/db/database.js');
   const subscribeDB = require('../../js/db/subscribeDB.js');
   const statsDB = require('../../js/db/statsDB.js');
+  const planDB = require('../../js/db/planDB.js');
 
   return {
     database,
     subscribeDB,
     statsDB,
+    planDB,
   };
 }
 

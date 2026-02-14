@@ -1,0 +1,118 @@
+name: Auto Tag Release (Semver)
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: auto-tag-release-master
+  cancel-in-progress: true
+
+jobs:
+  tag:
+    name: Create Semver Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine release bump (labels)
+        id: bump
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          bump="patch"
+          pr_number=""
+
+          # Prefer PR labels (promotion PR canary -> master). This keeps bump intent explicit.
+          prs_json="$(gh api "repos/${REPO}/commits/${SHA}/pulls" -H "Accept: application/vnd.github+json" 2>/dev/null || true)"
+          pr_number="$(printf '%s' "${prs_json}" | jq -r '.[0].number // empty' | head -n 1 || true)"
+
+          if [ -n "${pr_number}" ]; then
+            labels="$(gh api "repos/${REPO}/pulls/${pr_number}" -q '.labels[].name' 2>/dev/null || true)"
+            if echo "${labels}" | grep -qi '^release:major$'; then
+              bump="major"
+            elif echo "${labels}" | grep -qi '^release:minor$'; then
+              bump="minor"
+            elif echo "${labels}" | grep -qi '^release:patch$'; then
+              bump="patch"
+            else
+              bump="patch"
+              echo "WARN: PR #${pr_number} has no release:* label; defaulting to PATCH." >&2
+            fi
+          else
+            echo "WARN: No PR associated with ${SHA}; defaulting to PATCH." >&2
+          fi
+
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
+          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next semver tag
+        id: version
+        shell: bash
+        env:
+          BUMP: ${{ steps.bump.outputs.bump }}
+        run: |
+          set -euo pipefail
+
+          latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)"
+          if [ -z "${latest_tag}" ]; then
+            latest_tag="v0.1.0"
+          fi
+
+          base="${latest_tag#v}"
+          IFS='.' read -r major minor patch <<< "${base}"
+          major="${major:-0}"
+          minor="${minor:-0}"
+          patch="${patch:-0}"
+
+          case "${BUMP}" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch|*)
+              patch=$((patch + 1))
+              ;;
+          esac
+
+          next_tag="v${major}.${minor}.${patch}"
+          echo "latest_tag=${latest_tag}" >> "$GITHUB_OUTPUT"
+          echo "next_tag=${next_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag (if missing)
+        shell: bash
+        env:
+          NEXT_TAG: ${{ steps.version.outputs.next_tag }}
+        run: |
+          set -euo pipefail
+
+          if git rev-parse -q --verify "refs/tags/${NEXT_TAG}" >/dev/null; then
+            echo "Tag ${NEXT_TAG} already exists; nothing to do."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag "${NEXT_TAG}" "${GITHUB_SHA}"
+          git push origin "${NEXT_TAG}"
+

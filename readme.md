@@ -7,6 +7,10 @@ Daily Bible Verse Bot is a Discord bot that delivers daily verses, random verse 
 - Daily verse delivery to subscribed users.
 - Random verse delivery on-demand.
 - Per-user translation preferences.
+- Post passages in-channel or via DM with robust reference parsing and pagination (`/passage`).
+- DM “page-turner” reader mode with navigation controls (`/read`).
+- Reading plans persisted to SQLite and scheduled inside the bot process (`/plan ...`).
+- Internal HTTP endpoints for scoped random WEB verse selection (`/data/web/random/...`).
 - Dev server bootstrap automation for roles/channels/overwrites/templates.
 - Ops commands for health, version, and release notes.
 - Structured bot error logging to `#bot-logs`.
@@ -47,17 +51,22 @@ Workflows:
 
 - `build.yml`: build/test + publish a GitHub Release asset (preferred artifact source)
 - `deploy-canary.yml`: start canary (if stopped) and deploy via SSM
+- `auto-tag-release.yml`: after merges to `master`, auto-create semver tags (`vMAJOR.MINOR.PATCH`)
+- `release-label-guard.yml`: enforce release bump intent labels on promotion PRs to `master`
 - `deploy-prod.yml`: deploy production via SSM (should be gated via GitHub environment approvals)
+- `ci.yml`: PR test runner (does not deploy)
 
 Triggers:
 
-- Push to `master`:
+- Push / merge to `canary`:
   - publish a prerelease tagged `canary-<commit_sha>`
   - deploy to `canary`
   - update the `CanaryLastPushEpoch` tag so the canary stays up for 4 hours since the last push
-- Tag push `v*`:
-  - publish a production GitHub Release asset
-  - production deploy is triggered by the release event or can be run manually (rollback)
+- Merge promotion PR `canary` -> `master`:
+  - requires exactly one label: `release:patch`, `release:minor`, or `release:major`
+  - auto-creates a semver tag `vMAJOR.MINOR.PATCH`
+  - tag triggers a published GitHub Release asset build
+  - production deploy triggers only from the published GitHub Release (release-only policy)
 
 Canary auto-stop:
 
@@ -90,6 +99,9 @@ See `docs/deployments/runbook.md` for the operational checklist and troubleshoot
 - `/subscribe`
 - `/unsubscribe`
 - `/randomverse`
+- `/passage`
+- `/read`
+- `/plan`
 - `/settranslation`
 - `/stats`
 - `/support`
@@ -141,6 +153,17 @@ Detailed server spec is documented in `docs/discord-dev-server.md`.
 - Admin/ops commands are restricted to guild owner or `Maintainer` role.
 - Operational logs are written to `#bot-logs` when available.
 - Status heartbeat can be maintained in `#bot-status`.
+
+## Cost Notes (Important)
+
+This project intentionally avoids expensive always-on AWS services.
+
+- Canary is ephemeral and must auto-stop after inactivity.
+- No ALB/ASG/NAT/CodeDeploy/CodeBuild/managed DB.
+- SSM is preferred over SSH.
+- A CI cost leak guard fails deploys if orphan EBS volumes or unassociated EIPs exist.
+
+More detail: `docs/deployments/cost-notes.md`
 
 ## License
 
