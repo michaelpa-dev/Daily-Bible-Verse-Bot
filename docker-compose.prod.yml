@@ -11,6 +11,12 @@ services:
       NODE_ENV: production
       GIT_SHA: ${GIT_SHA:-unknown}
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-unknown}
+      RELEASE_TAG: ${RELEASE_TAG:-unknown}
+      BUILD_TIME: ${BUILD_TIME:-unknown}
+      DEPLOYED_AT: ${DEPLOYED_AT:-unknown}
+      DEV_LOGGING_ENABLED: ${DEV_LOGGING_ENABLED:-}
+      DEV_GUILD_ID: ${DEV_GUILD_ID:-}
+      DEV_BOT_LOGS_CHANNEL_ID: ${DEV_BOT_LOGS_CHANNEL_ID:-}
       BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN must be provided by deployment pipeline}
     volumes:
       - ../db:/app/db

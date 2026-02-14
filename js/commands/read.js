@@ -1,9 +1,10 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 
 const { addCommandExecution } = require('../db/statsDB.js');
 const { logger } = require('../logger.js');
 const { buildReadMessage, createReadSession } = require('../services/readSessions.js');
 const { logCommandError } = require('../services/botOps.js');
+const { buildStandardEmbed, COLORS } = require('../services/messageStyle.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -31,11 +32,12 @@ module.exports = {
       const payload = buildReadMessage(session);
 
       if (interaction.guildId) {
-        const embed = new EmbedBuilder()
-          .setTitle('Check your DMs')
-          .setDescription('I sent you a page-turner reader session.')
-          .setColor('#0099ff')
-          .setTimestamp();
+        const embed = buildStandardEmbed({
+          title: 'Check your DMs',
+          description: 'I sent you a page-turner reader session.',
+          color: COLORS.primary,
+          footerText: 'Use /read again to jump to a new reference.',
+        });
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
         await interaction.user.send(payload);

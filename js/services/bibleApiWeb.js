@@ -1,6 +1,7 @@
 const { translationApiUrl } = require('../config.js');
 const { getBookById } = require('../constants/books.js');
 const { logger } = require('../logger.js');
+const devBotLogs = require('./devBotLogs.js');
 
 const DEFAULT_TRANSLATION = 'web';
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -99,7 +100,25 @@ async function fetchPassage(reference, options = {}) {
   const url = buildBibleApiUrl(normalizedReference, translation);
   logger.debug(`Fetching bible-api.com passage: ${url}`);
 
-  const response = await fetchWithTimeout(url, options);
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await fetchWithTimeout(url, options);
+  } catch (error) {
+    devBotLogs.logError('http.bibleApiWeb.fetch.error', error, {
+      translation,
+      reference: normalizedReference,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+
+  devBotLogs.logEvent('info', 'http.bibleApiWeb.fetch', {
+    translation,
+    reference: normalizedReference,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+  });
   if (!response.ok) {
     let detail = '';
     try {

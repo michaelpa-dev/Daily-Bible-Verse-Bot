@@ -19,6 +19,7 @@ const { fetchPassageForBookChapter } = require('./bibleApiWeb.js');
 const { parseScriptureReference } = require('./scriptureReference.js');
 const { paginateLines } = require('./pagination.js');
 const { buildEmbedTitle, formatPassageLines } = require('./passageFormatter.js');
+const { buildScriptureFooter, COLORS } = require('./messageStyle.js');
 
 const CUSTOM_ID_PREFIX = 'rd';
 const DEFAULT_TTL_MS = 25 * 60 * 1000;
@@ -137,7 +138,9 @@ async function loadPassagePages(session, options = {}) {
   });
 
   const lines = formatPassageLines(passage);
-  const pages = paginateLines(lines, { maxChars: 3400 });
+  // DM "page-turner" mode: keep pages smaller for readability and faster scrolling.
+  // This intentionally roughly halves the previous size to double page count.
+  const pages = paginateLines(lines, { maxChars: 1700 });
 
   session.cache.set(cacheKey, { passage, pages });
   session.passage = passage;
@@ -161,14 +164,12 @@ function buildEmbed(session) {
   const total = session.pages.length;
   const pageIndex = Math.min(Math.max(session.pageIndex, 0), total - 1);
 
-  const translationName = String(passage?.translationName || 'World English Bible').trim();
-  const note = String(passage?.translationNote || '').trim();
-  const footerBase = `${translationName}${note ? ` • ${note}` : ''} • Source: bible-api.com`;
+  const footerBase = buildScriptureFooter(passage);
 
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setDescription(session.pages[pageIndex])
-    .setColor('#0099ff')
+    .setColor(COLORS.primary)
     .setFooter({
       text: `${footerBase} • Page ${pageIndex + 1}/${total}`,
     })

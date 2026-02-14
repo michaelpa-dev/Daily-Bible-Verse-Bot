@@ -154,6 +154,15 @@ export BOT_TOKEN="${bot_token}"
 export DEPLOY_ENVIRONMENT="${environment}"
 export GIT_SHA="${git_sha:-unknown}"
 export RELEASE_TAG="${release_tag}"
+export DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+if [[ "${environment}" = "canary" ]]; then
+  # Canary is for development verification; enable dev Discord logging by default.
+  export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-true}"
+else
+  # Production should not spam the dev guild by default.
+  export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-false}"
+fi
 
 app_next="${deploy_root}/app.next"
 app_current="${deploy_root}/app"
@@ -192,6 +201,16 @@ if [[ -d "${app_current}" ]]; then
   mv "${app_current}" "${app_prev}"
 fi
 mv "${app_next}" "${app_current}"
+
+build_time=""
+if [[ -f "${app_current}/build/version.json" ]]; then
+  build_time="$(
+    python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('builtAt',''))" "${app_current}/build/version.json" 2>/dev/null || true
+  )"
+fi
+if [[ -n "${build_time}" ]]; then
+  export BUILD_TIME="${build_time}"
+fi
 
 echo "Starting service..."
 "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" up -d --build --remove-orphans

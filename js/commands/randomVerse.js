@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const sendDailyVerse = require('../verseSender');
 const { logger } = require('../logger.js');
 const { addCommandExecution } = require('../db/statsDB.js');
@@ -10,6 +10,7 @@ const {
   toDiscordChoices,
 } = require('../constants/translations.js');
 const { logCommandError } = require('../services/botOps.js');
+const { buildStandardEmbed, COLORS } = require('../services/messageStyle.js');
 
 const translationChoices = toDiscordChoices().slice(0, 25);
 
@@ -38,15 +39,12 @@ module.exports = {
       );
       const translationLabel = getTranslationLabel(selectedTranslation);
 
-      const embed = new EmbedBuilder()
-        .setTitle('A random Bible verse has been sent to your DMs')
-        .setColor('#0099FF')
-        .setTimestamp()
-        .setDescription(`Translation: ${translationLabel}.`)
-        .setFooter({
-          text: 'Use /settranslation to change your saved preference.',
-        })
-        .setThumbnail(interaction.client.user.displayAvatarURL());
+      const embed = buildStandardEmbed({
+        title: 'Check your DMs',
+        color: COLORS.primary,
+        description: `I sent you a random verse. Translation: ${translationLabel}.`,
+        footerText: 'Use /settranslation to change your saved preference.',
+      });
       await interaction.reply({ embeds: [embed], ephemeral: true });
 
       const didSend = await sendDailyVerse(interaction.client, interaction.user.id, 'random', {
