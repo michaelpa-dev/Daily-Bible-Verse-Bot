@@ -153,6 +153,9 @@ jobs:
           - Request a random Bible verse on demand.
           - Subscribe to daily Bible verses and unsubscribe anytime.
           - Check bot statistics, including user subscriptions and command usage.
+          - Post passages in-channel or via DM with robust parsing and pagination.
+          - Use a DM page-turner reader with chapter navigation.
+          - Run reading plans scheduled inside the bot process (SQLite-backed).
           - Customizable status messages to keep your server engaged.
 
           📝 **Usage:**
@@ -167,6 +170,9 @@ jobs:
           - `/unsubscribe`: Unsubscribe from receiving daily verses.
           - `/stats`: View bot statistics and command usage.
           - `/randomverse`: Get a random Bible verse via DM.
+          - `/passage`: Post a passage with robust reference parsing and pagination.
+          - `/read`: DM page-turner reader mode.
+          - `/plan`: Reading plans.
           - `/support`: Get a link to the GitHub issue tracker for support.
 
           📢 **Contributions and Feedback:**
@@ -174,6 +180,7 @@ jobs:
 
           🔗 **Links:**
           - [Repository](https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot)
+          - [Invite Bot](https://discord.com/api/oauth2/authorize?client_id=1138224345446105108&permissions=380104993792&scope=applications.commands%20bot)
 
           EOF
 

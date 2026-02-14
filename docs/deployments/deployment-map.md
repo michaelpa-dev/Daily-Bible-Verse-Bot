@@ -3,7 +3,7 @@
 This repo deploys a single Discord bot to two EC2 environments:
 
 - `production`: always-on
-- `canary`: ephemeral (auto-starts on pushes to `master`, auto-stops after 4 hours of inactivity)
+- `canary`: ephemeral (auto-starts on pushes to `canary`, auto-stops after 4 hours of inactivity)
 
 ## AWS Inventory (Current)
 
@@ -54,6 +54,7 @@ Region: `us-east-1`
     - `daily-bible-verse-bot-<release_tag>.tar.gz`
   - Canary releases use tag: `canary-<commit_sha>` and are marked as prereleases.
   - Production releases use tags like `v0.2.0` and are not prereleases.
+  - Production deployments are **release-only**: deploys must reference a published GitHub Release tag + asset.
 
 - Deployment mechanism: AWS SSM RunCommand
   - `deploy-canary.yml` and `deploy-prod.yml` use GitHub OIDC to assume an AWS role.
