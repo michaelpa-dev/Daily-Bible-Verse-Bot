@@ -89,6 +89,12 @@ aws_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 echo "  aws_region:   ${aws_region}"
 
 container_name="daily-bible-verse-bot"
+project_name="daily-bible-verse-bot"
+release_tag_file="${deploy_root}/.release_tag"
+previous_release_tag=""
+if [[ -f "${release_tag_file}" ]]; then
+  previous_release_tag="$(tr -d '\r' < "${release_tag_file}" | head -n 1 | xargs || true)"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker not found on instance. Install Docker first." >&2
@@ -96,9 +102,9 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if docker compose version >/dev/null 2>&1; then
-  DOCKER_COMPOSE=(docker compose)
+  DOCKER_COMPOSE=(docker compose --project-name "${project_name}")
 elif command -v docker-compose >/dev/null 2>&1; then
-  DOCKER_COMPOSE=(docker-compose)
+  DOCKER_COMPOSE=(docker-compose -p "${project_name}")
 else
   echo "Docker Compose not found on instance." >&2
   exit 1
@@ -174,8 +180,50 @@ if [[ ! -f "${compose_file}" ]]; then
   exit 1
 fi
 
+# Build the next image before stopping the current container. This keeps downtime minimal and
+# avoids taking the bot offline if the build fails.
+echo "Building next image for release ${release_tag} (no downtime)..."
+"${DOCKER_COMPOSE[@]}" -f "${compose_file}" build
+
+rollback_enabled="false"
+rollback() {
+  if [[ "${rollback_enabled}" != "true" ]]; then
+    return
+  fi
+
+  echo "ERROR: deployment failed. Attempting rollback..." >&2
+
+  # Clean up a potentially broken container so the rollback can reuse the fixed container_name.
+  if docker inspect "${container_name}" >/dev/null 2>&1; then
+    docker rm -f "${container_name}" >/dev/null 2>&1 || true
+  fi
+
+  local rollback_compose=""
+  if [[ -f "${app_prev}/docker-compose.prod.yml" ]]; then
+    rollback_compose="${app_prev}/docker-compose.prod.yml"
+  elif [[ -f "${app_current}/docker-compose.prod.yml" ]]; then
+    rollback_compose="${app_current}/docker-compose.prod.yml"
+  fi
+
+  if [[ -z "${rollback_compose}" ]]; then
+    echo "Rollback not possible: no previous compose file found." >&2
+    return
+  fi
+
+  if [[ -n "${previous_release_tag}" ]]; then
+    export RELEASE_TAG="${previous_release_tag}"
+    echo "Rolling back to previous release tag: ${previous_release_tag}" >&2
+    "${DOCKER_COMPOSE[@]}" -f "${rollback_compose}" up -d --remove-orphans || true
+  else
+    echo "No previous release tag recorded; rebuilding rollback image from source." >&2
+    "${DOCKER_COMPOSE[@]}" -f "${rollback_compose}" up -d --build --remove-orphans || true
+  fi
+}
+trap rollback ERR
+
 # Stop the running service (if any) before swapping code directories.
 if [[ -f "${app_current}/docker-compose.prod.yml" ]]; then
+  rollback_enabled="true"
   echo "Stopping existing service..."
   "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" down --remove-orphans || true
 fi
@@ -194,7 +242,7 @@ fi
 mv "${app_next}" "${app_current}"
 
 echo "Starting service..."
-"${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" up -d --build --remove-orphans
+"${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" up -d --remove-orphans
 "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" ps
 
 if ! docker inspect "${container_name}" >/dev/null 2>&1; then
@@ -231,6 +279,10 @@ if (( SECONDS >= deadline )); then
   docker logs --tail 200 "${container_name}" >&2 || true
   exit 1
 fi
+
+echo "Recording last successful release tag to ${release_tag_file}..."
+printf '%s\n' "${release_tag}" > "${release_tag_file}"
+chmod 0644 "${release_tag_file}" || true
 
 echo "Pruning unused Docker images..."
 docker image prune -f >/dev/null || true
