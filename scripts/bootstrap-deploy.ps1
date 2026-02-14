@@ -1,4 +1,14 @@
 Set-StrictMode -Version Latest
+$script:LegacyNotice = @'
+NOTE: This script is legacy.
+
+The repository now deploys via GitHub Releases + AWS SSM RunCommand + GitHub OIDC (no SSH required).
+Prefer:
+  - scripts/infra/deploy-foundation.ps1
+  - .github/workflows/build.yml / deploy-canary.yml / deploy-prod.yml
+
+This legacy script provisions SSH ingress + long-lived deploy keys and is retained only for reference.
+'@
 $ErrorActionPreference = 'Continue'
 if ($PSVersionTable.PSVersion.Major -ge 7) {
   $PSNativeCommandUseErrorActionPreference = $false
@@ -477,15 +487,31 @@ function Write-UserData {
   param([string]$EnvironmentName)
 
   $userDataPath = Join-Path $env:TEMP "dbv-user-data-$EnvironmentName.sh"
-  $userDataContent = @(
-    '#!/bin/bash'
-    'set -euxo pipefail'
-    'dnf update -y'
-    'dnf install -y docker git'
-    'systemctl enable docker'
-    'systemctl start docker'
-    'usermod -aG docker ec2-user || true'
-    'mkdir -p /opt/daily-bible-verse-bot'
+	  $userDataContent = @(
+	    '#!/bin/bash'
+	    'set -euxo pipefail'
+	    'dnf update -y'
+	    'dnf install -y docker git'
+	    'cat >/etc/systemd/system/imds-route.service <<\"EOF\"'
+	    '[Unit]'
+	    'Description=Ensure route to EC2 Instance Metadata Service (IMDS)'
+	    'After=network-online.target'
+	    'Wants=network-online.target'
+	    ''
+	    '[Service]'
+	    'Type=oneshot'
+	    'ExecStart=/usr/sbin/ip route replace 169.254.169.254/32 dev ens5 scope link'
+	    'RemainAfterExit=yes'
+	    ''
+	    '[Install]'
+	    'WantedBy=multi-user.target'
+	    'EOF'
+	    'systemctl daemon-reload'
+	    'systemctl enable --now imds-route.service'
+	    'systemctl enable docker'
+	    'systemctl start docker'
+	    'usermod -aG docker ec2-user || true'
+	    'mkdir -p /opt/daily-bible-verse-bot'
     'chown -R ec2-user:ec2-user /opt/daily-bible-verse-bot'
     'mkdir -p /opt/daily-bible-verse-bot/db /opt/daily-bible-verse-bot/logs/archive'
     'if ! command -v docker-compose >/dev/null 2>&1; then'

@@ -6,12 +6,12 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - .env
+      - ../.env
     environment:
       NODE_ENV: production
       GIT_SHA: ${GIT_SHA:-unknown}
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-unknown}
       BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN must be provided by deployment pipeline}
     volumes:
-      - ./db:/app/db
-      - ./logs:/app/logs
+      - ../db:/app/db
+      - ../logs:/app/logs

@@ -41,19 +41,27 @@ For managed deployments (`production` / `canary`), set `BOT_TOKEN` in GitHub env
 
 ## Automatic Deployment Pipeline
 
-This repo includes GitHub Actions deployment automation in `.github/workflows/deploy.yml`.
+This repo deploys to EC2 using GitHub Releases + AWS SSM RunCommand (no SSH required).
 
-- Trigger:
-  - Push to `master` -> deploy `production`
-  - Push to `canary` -> deploy `canary`
-  - Manual `workflow_dispatch` -> choose `target_environment` (`canary` or `production`)
-- Flow:
-  1. Run tests (`npm ci` + `npm test`)
-  2. Resolve deploy target environment (`production` or `canary`)
-  3. Send Discord notification that deploy started (optional)
-  4. SSH to the EC2 host for that environment
-  5. Pull latest target branch and restart Docker (`docker compose -f docker-compose.prod.yml up -d --build`)
-  6. Send Discord success/failure notification (optional)
+Workflows:
+
+- `build.yml`: build/test + publish a GitHub Release asset (preferred artifact source)
+- `deploy-canary.yml`: start canary (if stopped) and deploy via SSM
+- `deploy-prod.yml`: deploy production via SSM (should be gated via GitHub environment approvals)
+
+Triggers:
+
+- Push to `master`:
+  - publish a prerelease tagged `canary-<commit_sha>`
+  - deploy to `canary`
+  - update the `CanaryLastPushEpoch` tag so the canary stays up for 4 hours since the last push
+- Tag push `v*`:
+  - publish a production GitHub Release asset
+  - production deploy is triggered by the release event or can be run manually (rollback)
+
+Canary auto-stop:
+
+- A small Lambda runs every 15 minutes and stops the canary instance after 4 hours of inactivity.
 
 ### GitHub Environments and secrets
 
@@ -64,38 +72,18 @@ Create two GitHub environments:
 
 Add these secrets in each environment (values differ per environment):
 
-- `DEPLOY_SSH_KEY`: private SSH key used by GitHub Actions
-- `DEPLOY_HOST`: server hostname or IP
-- `DEPLOY_USER`: SSH username
-- `DEPLOY_PATH`: absolute path to repo on the server
-- `DEPLOY_PORT`: optional SSH port (defaults to `22`)
 - `BOT_TOKEN`: bot token for that environment
-- `DISCORD_DEPLOY_WEBHOOK_URL`: optional Discord webhook URL for deploy notifications
 
 EC2 host prerequisites:
 
-- `git` and Docker installed
+- Docker installed
 - Docker Compose plugin (`docker compose`) or `docker-compose` installed
-- repo present at `DEPLOY_PATH` (workflow can auto-clone if missing)
-- runtime `.env` file exists at `${DEPLOY_PATH}/.env` for non-token settings (`BIBLE_API_URL`, `TRANSLATION_API_URL`, `DEFAULT_TRANSLATION`, etc.)
+- SSM enabled on the instance (SSM agent + IAM instance profile)
+- runtime `.env` file exists at `/opt/daily-bible-verse-bot/.env` for non-token settings (created automatically if missing)
 
 ### EC2 + Docker setup checklist
 
-1. Create Linux EC2 instances for `production` and `canary`.
-2. Install Docker and Docker Compose plugin on the instance.
-3. Clone this repository into your chosen deploy path:
-   - `git clone https://github.com/<your-org-or-user>/Daily-Bible-Verse-Bot.git <DEPLOY_PATH>`
-4. Create `${DEPLOY_PATH}/.env` with required runtime values (excluding `BOT_TOKEN`), for example:
-   - `BIBLE_API_URL=https://labs.bible.org/api/?type=json&passage=`
-   - `TRANSLATION_API_URL=https://bible-api.com/`
-   - `DEFAULT_TRANSLATION=web`
-   - `LOG_LEVEL=debug`
-5. Ensure SSH access for GitHub Actions using the private key you store in `DEPLOY_SSH_KEY`.
-6. Add the GitHub environment secrets listed above for both `production` and `canary`.
-7. Push to `master` (production) or `canary` (canary) and verify:
-   - Actions run succeeds
-   - container is running: `docker compose -f docker-compose.prod.yml ps`
-   - Discord deploy notifications appear (if webhook configured)
+See `docs/deployments/runbook.md` for the operational checklist and troubleshooting commands.
 
 ## Slash Commands
 
