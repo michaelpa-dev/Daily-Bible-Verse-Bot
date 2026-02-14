@@ -11,7 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-canary
+  # Avoid cross-branch cancellations while master still contains a legacy workflow_run-based canary deploy.
+  # This should always be branch-scoped anyway: we only want one canary deploy at a time per branch.
+  group: deploy-canary-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
