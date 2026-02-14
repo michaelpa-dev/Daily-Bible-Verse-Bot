@@ -87,6 +87,10 @@ async function upsertPlan(options) {
   if (!paceType) {
     throw new Error('paceType is required.');
   }
+  const allowedPaceTypes = ['chapters', 'verses', 'minutes'];
+  if (!allowedPaceTypes.includes(paceType)) {
+    throw new Error('paceType must be one of: chapters, verses, minutes.');
+  }
   if (!Number.isFinite(paceValue) || paceValue <= 0) {
     throw new Error('paceValue must be a positive number.');
   }
@@ -309,4 +313,3 @@ module.exports = {
     toJsonArray,
   },
 };
-

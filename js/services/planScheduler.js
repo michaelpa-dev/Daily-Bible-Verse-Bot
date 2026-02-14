@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 const { logger } = require('../logger.js');
-const { listActivePlans, getPlanById, bumpDayIndex } = require('../db/planDB.js');
+const { listActivePlans, getPlanById, bumpDayIndex, setPlanStatus } = require('../db/planDB.js');
 const { getReadingForDay, buildReferenceLabel } = require('./planEngine.js');
 
 const tasks = new Map();
@@ -85,13 +85,27 @@ async function postPlanTick(client, planId, options = {}) {
   }
 
   const localDate = formatLocalDate(plan.timezone);
+  if (plan.startDate && localDate < plan.startDate) {
+    // Respect future-dated plans: don't post until the plan's start date in its timezone.
+    return;
+  }
   if (plan.lastPostedOn === localDate) {
     return;
   }
 
   const refs = getReadingForDay(plan, plan.dayIndex);
   if (refs.length === 0) {
-    logger.info(`Plan ${plan.id} has no more readings. Stopping.`);
+    logger.info(`Plan ${plan.id} has no more readings. Marking stopped.`);
+    await setPlanStatus(plan.id, 'stopped');
+    const task = tasks.get(plan.id);
+    if (task) {
+      try {
+        task.stop();
+      } catch (error) {
+        // ignore
+      }
+      tasks.delete(plan.id);
+    }
     return;
   }
 
@@ -171,6 +185,9 @@ async function postLatePlans(client) {
   for (const plan of plans) {
     try {
       const localDate = formatLocalDate(plan.timezone);
+      if (plan.startDate && localDate < plan.startDate) {
+        continue;
+      }
       if (plan.lastPostedOn === localDate) {
         continue;
       }
@@ -208,4 +225,3 @@ module.exports = {
     tasks,
   },
 };
-
