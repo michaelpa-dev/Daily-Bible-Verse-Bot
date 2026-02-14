@@ -156,13 +156,10 @@ export GIT_SHA="${git_sha:-unknown}"
 export RELEASE_TAG="${release_tag}"
 export DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-if [[ "${environment}" = "canary" ]]; then
-  # Canary is for development verification; enable dev Discord logging by default.
-  export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-true}"
-else
-  # Production should not spam the dev guild by default.
-  export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-false}"
-fi
+# Always-on #bot-logs in both canary + production. The bot's Discord log sink
+# is guarded by batching + a circuit breaker, so this won't crash the process
+# if Discord posting fails.
+export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-true}"
 
 app_next="${deploy_root}/app.next"
 app_current="${deploy_root}/app"

@@ -79,11 +79,17 @@ function buildConfig(environment = process.env) {
     .trim()
     .toLowerCase();
 
-  const enabledDefault = runtimeEnvironment === 'canary';
+  // #bot-logs must be always-on in both canary + production. The sink is still
+  // guarded by batching, rate-limit handling, and a circuit breaker so failures
+  // never crash the bot.
+  const enabledDefault = true;
   const enabled = parseBoolean(environment.DEV_LOGGING_ENABLED, enabledDefault);
 
-  const defaultLevel = runtimeEnvironment === 'production' ? 'warn' : 'info';
-  const level = parseLogLevel(environment.DEV_LOG_LEVEL, defaultLevel);
+  // Prefer DEV_LOG_LEVEL for the Discord sink, but fall back to LOG_LEVEL so
+  // operators only have to learn one knob in simple setups.
+  const defaultLevel = 'info';
+  const configuredLevel = environment.DEV_LOG_LEVEL ?? environment.LOG_LEVEL;
+  const level = parseLogLevel(configuredLevel, defaultLevel);
 
   return {
     enabled,
