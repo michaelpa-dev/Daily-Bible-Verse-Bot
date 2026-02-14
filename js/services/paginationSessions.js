@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 
 const DEFAULT_TTL_MS = 20 * 60 * 1000;
+const MAX_SESSIONS = 1000;
 
 const sessions = new Map();
 
@@ -8,7 +9,35 @@ function createSessionId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
+function sweepExpiredSessions(now = Date.now()) {
+  for (const [id, session] of sessions.entries()) {
+    if (!session || typeof session.expiresAt !== 'number' || now > session.expiresAt) {
+      sessions.delete(id);
+    }
+  }
+}
+
+function pruneToMaxSessions() {
+  if (sessions.size <= MAX_SESSIONS) {
+    return;
+  }
+
+  // Map preserves insertion order; delete oldest sessions first.
+  const overflow = sessions.size - MAX_SESSIONS;
+  let removed = 0;
+  for (const id of sessions.keys()) {
+    sessions.delete(id);
+    removed += 1;
+    if (removed >= overflow) {
+      break;
+    }
+  }
+}
+
 function createPaginationSession(options) {
+  sweepExpiredSessions();
+  pruneToMaxSessions();
+
   const userId = String(options?.userId || '').trim();
   const pages = Array.isArray(options?.pages) ? options.pages.map((p) => String(p || '')) : [];
 
@@ -74,5 +103,7 @@ module.exports = {
   getPaginationSession,
   __private: {
     sessions,
+    sweepExpiredSessions,
+    pruneToMaxSessions,
   },
 };

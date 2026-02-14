@@ -22,11 +22,37 @@ const { buildEmbedTitle, formatPassageLines } = require('./passageFormatter.js')
 
 const CUSTOM_ID_PREFIX = 'rd';
 const DEFAULT_TTL_MS = 25 * 60 * 1000;
+const MAX_SESSIONS = 250;
 
 const sessions = new Map();
 
 function createSessionId() {
   return crypto.randomBytes(8).toString('hex');
+}
+
+function sweepExpiredSessions(now = Date.now()) {
+  for (const [id, session] of sessions.entries()) {
+    if (!session || typeof session.expiresAt !== 'number' || now > session.expiresAt) {
+      sessions.delete(id);
+    }
+  }
+}
+
+function pruneToMaxSessions() {
+  if (sessions.size <= MAX_SESSIONS) {
+    return;
+  }
+
+  // Map preserves insertion order; delete oldest sessions first.
+  const overflow = sessions.size - MAX_SESSIONS;
+  let removed = 0;
+  for (const id of sessions.keys()) {
+    sessions.delete(id);
+    removed += 1;
+    if (removed >= overflow) {
+      break;
+    }
+  }
 }
 
 function buildCustomId(sessionId, action) {
@@ -251,6 +277,9 @@ function buildJumpModal(session) {
 }
 
 async function createReadSession(options) {
+  sweepExpiredSessions();
+  pruneToMaxSessions();
+
   const userId = String(options?.userId || '').trim();
   if (!userId) {
     throw new Error('Read session requires userId.');
@@ -449,5 +478,7 @@ module.exports = {
     buildJumpModal,
     getSession,
     parseCustomId,
+    pruneToMaxSessions,
+    sweepExpiredSessions,
   },
 };
