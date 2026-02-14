@@ -101,6 +101,7 @@ guards to prevent regressions.
   - Tag docker images by `${RELEASE_TAG}`.
   - Pre-build the next image before stopping the current container.
   - Record last successful release tag and attempt rollback on failure.
+  - Explicitly remove older tagged images on-instance to avoid filling disk.
 
 ## Phase 4: Tests & Runtime Verification
 
@@ -127,4 +128,3 @@ guards to prevent regressions.
 - The deprecation warnings about `ephemeral: true` were observed in production logs. They are noisy
   but not currently fatal. (A follow-up PR can migrate to `flags: MessageFlags.Ephemeral` across
   all interaction replies.)
-

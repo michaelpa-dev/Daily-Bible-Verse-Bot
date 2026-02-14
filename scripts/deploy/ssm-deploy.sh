@@ -285,6 +285,34 @@ printf '%s\n' "${release_tag}" > "${release_tag_file}"
 chmod 0644 "${release_tag_file}" || true
 
 echo "Pruning unused Docker images..."
+# Since we tag images by release, explicitly remove older tags to avoid filling the disk.
+keep_tags=("${release_tag}")
+if [[ -n "${previous_release_tag}" ]]; then
+  keep_tags+=("${previous_release_tag}")
+fi
+
+echo "Keeping docker images for tags: ${keep_tags[*]}"
+while IFS= read -r tag; do
+  if [[ -z "${tag}" || "${tag}" = "<none>" ]]; then
+    continue
+  fi
+
+  keep="false"
+  for keep_tag in "${keep_tags[@]}"; do
+    if [[ "${tag}" = "${keep_tag}" ]]; then
+      keep="true"
+      break
+    fi
+  done
+
+  if [[ "${keep}" = "true" ]]; then
+    continue
+  fi
+
+  echo "Removing old image daily-bible-verse-bot:${tag}..."
+  docker image rm -f "daily-bible-verse-bot:${tag}" >/dev/null 2>&1 || true
+done < <(docker images --format '{{.Tag}}' daily-bible-verse-bot 2>/dev/null | sort -u)
+
 docker image prune -f >/dev/null || true
 
 echo "Deploy finished successfully."
