@@ -38,8 +38,9 @@ Promotion flow:
    - `release:patch`, `release:minor`, or `release:major`
 5. Merge the PR to `master`.
 6. `auto-tag-release.yml` auto-creates a semver tag `vMAJOR.MINOR.PATCH` on the merge commit.
-7. The tag triggers `build.yml`, which publishes a **published** GitHub Release + asset (`daily-bible-verse-bot-vX.Y.Z.tar.gz`).
-8. `deploy-prod.yml` deploys production **only** from the published GitHub Release asset.
+7. GitHub will not trigger downstream workflows from tags created by `GITHUB_TOKEN`, so `auto-tag-release.yml` dispatches `build.yml` explicitly for the new tag.
+8. `build.yml` publishes a **published** GitHub Release + asset (`daily-bible-verse-bot-vX.Y.Z.tar.gz`).
+9. `build.yml` dispatches `deploy-prod.yml`, which deploys production **only** from the published GitHub Release asset.
 
 Rollback / manual deploy:
 
