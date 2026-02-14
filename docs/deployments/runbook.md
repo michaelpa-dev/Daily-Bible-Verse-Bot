@@ -10,7 +10,7 @@ Trigger:
 
 Then:
 
-- `.github/workflows/deploy-canary.yml` triggers from the successful build workflow run.
+- `.github/workflows/deploy-canary.yml` runs on pushes to `canary` and waits for the `canary-<commit_sha>` prerelease asset to exist before deploying.
 - It:
   - Starts the canary EC2 instance if stopped
   - Tags it with `CanaryLastPushEpoch` (resets the 4 hour auto-stop timer)
