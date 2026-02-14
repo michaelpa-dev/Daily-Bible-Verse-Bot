@@ -172,10 +172,17 @@ jobs:
             for attempt in $(seq 1 20); do
               echo "Release asset ${asset_name} not found yet (attempt ${attempt}/20). Waiting 10s..."
               sleep 10
-              release_json="$(curl -fsSL \
+
+              http_code="$(curl -sS -o release.json -w "%{http_code}" \
                 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
-                "${release_url}")" || true
+                "${release_url}" || true)"
+              if [ "${http_code}" != "200" ]; then
+                echo "GitHub API returned HTTP ${http_code} while waiting for asset ${asset_name} (attempt ${attempt}/20)." >&2
+                continue
+              fi
+
+              release_json="$(cat release.json)"
               asset_id="$(printf '%s' "${release_json}" | jq -r --arg name "${asset_name}" '.assets[] | select(.name==$name) | .id' | head -n 1 || true)"
               if [ -n "${asset_id}" ] && [ "${asset_id}" != "null" ]; then
                 break
