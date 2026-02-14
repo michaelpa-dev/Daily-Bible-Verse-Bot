@@ -11,7 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-canary
+  # Serialize all canary deployments (shared EC2 target), but avoid collisions with the legacy
+  # default-branch workflow which also uses the `deploy-canary` concurrency group.
+  group: deploy-canary-v2
   cancel-in-progress: true
 
 jobs:
