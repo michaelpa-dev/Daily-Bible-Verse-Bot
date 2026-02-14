@@ -20,14 +20,20 @@ const {
   logRuntimeError,
   upsertBotStatusMessage,
 } = require('./services/botOps.js');
+const { runCommandSafely } = require('./services/commandRunner.js');
+const { startDiscordWatchdog } = require('./services/discordWatchdog.js');
 const { createHttpServer } = require('./api/httpServer.js');
 const { handlePaginationInteraction } = require('./services/paginationInteractions.js');
 const { handleReadInteraction } = require('./services/readSessions.js');
 const { handlePlanInteraction } = require('./services/planInteractions.js');
 const { initializePlanScheduler } = require('./services/planScheduler.js');
+const runtimeHealth = require('./services/runtimeHealth.js');
+const { sleep } = require('./services/retry.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
-const BOT_STATUS_SCHEDULE = '*/5 * * * * *';
+// Updating a Discord message every 5 seconds is extremely spammy and can contribute to rate limits.
+// Keep this low-frequency so failures don't cascade into instability.
+const BOT_STATUS_SCHEDULE = '*/5 * * * *';
 const DAILY_VERSE_SCHEDULE = '0 9 * * *';
 const DEFAULT_STATUS = 'the Word of God';
 const DELIVERY_CONCURRENCY = 5;
@@ -39,6 +45,7 @@ const client = new Client({
 
 client.commands = new Collection();
 let httpServer = null;
+let watchdog = null;
 
 function loadCommandModules() {
   const commandsPath = path.join(scriptDirectory, 'commands');
@@ -145,6 +152,8 @@ function scheduleRecurringJobs() {
 
 client.once(Events.ClientReady, async () => {
   logger.info(`Logged in as ${client.user.username}`);
+  runtimeHealth.markDiscordReady(client);
+  watchdog = startDiscordWatchdog(client);
 
   try {
     const avatarPath = path.join(scriptDirectory, '../assets/bible_scripture_icon.png');
@@ -158,11 +167,14 @@ client.once(Events.ClientReady, async () => {
 
   await updateActiveGuilds(client);
 
-  const guildRegistrations = [];
+  // Register commands sequentially to avoid hitting burst rate limits on startup.
   for (const guild of client.guilds.cache.values()) {
-    guildRegistrations.push(registerSlashCommands(guild));
+    await registerSlashCommands(guild);
+    // Small delay keeps startups stable when in many guilds.
+    if (client.guilds.cache.size > 1) {
+      await sleep(1200);
+    }
   }
-  await Promise.allSettled(guildRegistrations);
 
   scheduleRecurringJobs();
 
@@ -184,7 +196,25 @@ client.on(Events.GuildDelete, async (guild) => {
   await updateActiveGuilds(client);
 });
 
+client.on(Events.ShardDisconnect, (event) => {
+  runtimeHealth.markDiscordDisconnect(client, event?.reason || event?.code || 'disconnect');
+});
+
+client.on(Events.ShardReconnecting, () => {
+  runtimeHealth.markDiscordDisconnect(client, 'reconnecting');
+});
+
+client.on(Events.ShardReady, () => {
+  runtimeHealth.markDiscordReady(client);
+});
+
+client.on(Events.ShardResume, () => {
+  runtimeHealth.markDiscordReady(client);
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
+  runtimeHealth.markInteraction(interaction);
+
   if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
     try {
       const handled =
@@ -218,22 +248,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  try {
-    await command.execute(interaction);
-  } catch (error) {
-    logger.error(`Unhandled error in command ${interaction.commandName}`, error);
-    await logCommandError(interaction, error, 'Unhandled command execution error');
-    const message = 'An error occurred while executing this command.';
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: message, ephemeral: true });
-    } else {
-      await interaction.reply({ content: message, ephemeral: true });
-    }
+  const startedAt = Date.now();
+  const result = await runCommandSafely(interaction, command);
+  const durationMs = typeof result.durationMs === 'number' ? result.durationMs : Date.now() - startedAt;
+  if (result.ok) {
+    logger.info(
+      `Slash command succeeded: ${interaction.commandName} (${durationMs}ms), guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
+    );
+  } else {
+    logger.warn(
+      `Slash command failed: ${interaction.commandName} (${durationMs}ms), guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
+    );
   }
 });
 
 async function shutdown() {
   try {
+    watchdog?.stop?.();
     client.destroy();
     if (httpServer) {
       await new Promise((resolve) => httpServer.close(resolve));
@@ -259,7 +290,10 @@ async function startHttpApiServer() {
     throw new Error(`Invalid HTTP port: ${portRaw}`);
   }
 
-  httpServer = createHttpServer();
+  httpServer = createHttpServer({
+    getHealthSnapshot: () => runtimeHealth.getSnapshot(client),
+    isReady: () => (typeof client.isReady === 'function' ? client.isReady() : false),
+  });
   await new Promise((resolve) => httpServer.listen(port, bindHost, resolve));
   logger.info(`HTTP API server listening on http://${bindHost}:${port}`);
 }
@@ -278,7 +312,7 @@ async function runBot() {
 
 runBot().catch((error) => {
   logger.error('Bot failed to start', error);
-  process.exitCode = 1;
+  process.exit(1);
 });
 
 process.once('SIGINT', async () => {
@@ -295,10 +329,28 @@ process.on('unhandledRejection', async (reason) => {
   const error =
     reason instanceof Error ? reason : new Error(`Unhandled rejection: ${String(reason)}`);
   logger.error('Unhandled promise rejection', error);
-  await logRuntimeError(client, error, 'unhandledRejection');
+  try {
+    await logRuntimeError(client, error, 'unhandledRejection');
+  } catch {
+    // ignore secondary failures
+  }
+
+  const fatal =
+    String(process.env.FATAL_ON_UNHANDLED_REJECTION || '').trim().toLowerCase() !== 'false';
+  if (fatal) {
+    logger.error('Exiting process due to unhandledRejection (FATAL_ON_UNHANDLED_REJECTION != false)');
+    process.exit(1);
+  }
 });
 
 process.on('uncaughtException', async (error) => {
   logger.error('Uncaught exception', error);
-  await logRuntimeError(client, error, 'uncaughtException');
+  try {
+    await logRuntimeError(client, error, 'uncaughtException');
+  } catch {
+    // ignore secondary failures
+  }
+
+  // Treat uncaught exceptions as fatal; rely on Docker restart policy for recovery.
+  process.exit(1);
 });
