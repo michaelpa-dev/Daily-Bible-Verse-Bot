@@ -104,7 +104,7 @@ async function fetchPassage(reference, options = {}) {
     let detail = '';
     try {
       detail = String(await response.text());
-    } catch (error) {
+    } catch {
       detail = '';
     }
 
@@ -211,4 +211,3 @@ module.exports = {
     sanitizeText,
   },
 };
-

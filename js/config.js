@@ -14,7 +14,7 @@ function readJsonConfig(filePath) {
 
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (error) {
+  } catch {
     return {};
   }
 }
@@ -24,9 +24,7 @@ const fallbackConfig = readJsonConfig(configSamplePath);
 
 function pickConfigValue(key, defaultValue, options = {}) {
   const { environment = process.env, primary = primaryConfig, fallback = fallbackConfig } = options;
-  const environmentKey = key
-    .replace(/[A-Z]/g, (letter) => `_${letter}`)
-    .toUpperCase();
+  const environmentKey = key.replace(/[A-Z]/g, (letter) => `_${letter}`).toUpperCase();
 
   if (Object.prototype.hasOwnProperty.call(environment, environmentKey)) {
     return environment[environmentKey];
@@ -57,8 +55,7 @@ function resolveBotToken(options = {}) {
   }
 
   const runtimeEnvironment = resolveRuntimeEnvironment(environment);
-  const allowFileToken =
-    String(environment.ALLOW_FILE_BOT_TOKEN || '').toLowerCase() === 'true';
+  const allowFileToken = String(environment.ALLOW_FILE_BOT_TOKEN || '').toLowerCase() === 'true';
 
   if (MANAGED_TOKEN_ENVIRONMENTS.has(runtimeEnvironment) && !allowFileToken) {
     return '';
@@ -73,10 +70,7 @@ function resolveBotToken(options = {}) {
 
 module.exports = {
   botToken: resolveBotToken(),
-  bibleApiUrl: pickConfigValue(
-    'bibleApiUrl',
-    'https://labs.bible.org/api/?type=json&passage='
-  ),
+  bibleApiUrl: pickConfigValue('bibleApiUrl', 'https://labs.bible.org/api/?type=json&passage='),
   translationApiUrl: pickConfigValue('translationApiUrl', 'https://bible-api.com/'),
   issueTrackerUrl: pickConfigValue(
     'issueTrackerUrl',

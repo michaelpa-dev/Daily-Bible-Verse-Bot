@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
-
 /**
  * Generate per-chapter verse counts for bible-api.com (WEB translation).
  *
@@ -39,7 +37,7 @@ async function fetchJson(url) {
   let parsed = null;
   try {
     parsed = JSON.parse(bodyText);
-  } catch (error) {
+  } catch {
     // fallthrough
   }
 
@@ -145,7 +143,7 @@ function loadExisting() {
 
   try {
     return JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf8'));
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -158,14 +156,15 @@ async function main() {
   }
 
   const existing = loadExisting();
-  const output = existing && existing.translationId === TRANSLATION
-    ? existing
-    : {
-        translationId: TRANSLATION,
-        generatedAt: null,
-        source: 'bible-api.com',
-        books: {},
-      };
+  const output =
+    existing && existing.translationId === TRANSLATION
+      ? existing
+      : {
+          translationId: TRANSLATION,
+          generatedAt: null,
+          source: 'bible-api.com',
+          books: {},
+        };
 
   for (const book of BOOKS) {
     if (!FORCE && output.books[book.id] && output.books[book.id].chapters) {
@@ -192,9 +191,7 @@ async function main() {
         // Transient error: back off and retry a little.
         console.warn(`  WARN chapter ${chapter}: HTTP ${response.status}`);
         if (consecutiveFailures >= 3) {
-          throw new Error(
-            `Too many failures fetching ${ref} (last status ${response.status}).`
-          );
+          throw new Error(`Too many failures fetching ${ref} (last status ${response.status}).`);
         }
 
         await sleep(800);
@@ -225,7 +222,9 @@ async function main() {
 
       const returnedChapter = Number(verses[0]?.chapter);
       if (Number.isFinite(returnedChapter) && returnedChapter !== chapter) {
-        console.warn(`  WARN chapter ${chapter}: api returned chapter ${returnedChapter}. Stopping.`);
+        console.warn(
+          `  WARN chapter ${chapter}: api returned chapter ${returnedChapter}. Stopping.`
+        );
         break;
       }
 
@@ -269,7 +268,9 @@ async function main() {
   }
 
   console.log('\nDone.');
-  console.log(`Total verses (computed from chapter counts): ${totals.all} (OT ${totals.OT}, NT ${totals.NT})`);
+  console.log(
+    `Total verses (computed from chapter counts): ${totals.all} (OT ${totals.OT}, NT ${totals.NT})`
+  );
 }
 
 main().catch((error) => {

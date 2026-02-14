@@ -38,10 +38,7 @@ module.exports = {
       option
         .setName('mode')
         .setDescription('Where to send the passage')
-        .addChoices(
-          { name: 'Channel', value: 'channel' },
-          { name: 'DM', value: 'dm' }
-        )
+        .addChoices({ name: 'Channel', value: 'channel' }, { name: 'DM', value: 'dm' })
         .setRequired(false)
     ),
 
@@ -85,9 +82,7 @@ module.exports = {
       };
 
       if (mode === 'dm') {
-        const notice = interaction.guildId
-          ? 'Check your DMs.'
-          : null;
+        const notice = interaction.guildId ? 'Check your DMs.' : null;
 
         if (notice) {
           await interaction.reply({ content: notice, ephemeral: true });
@@ -129,4 +124,3 @@ module.exports = {
     }
   },
 };
-

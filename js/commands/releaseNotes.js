@@ -1,10 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { addCommandExecution } = require('../db/statsDB.js');
 const { requireOwnerOrMaintainer } = require('../services/permissionUtils.js');
-const {
-  getChangelogChannel,
-  sendBotLogMessage,
-} = require('../services/botOps.js');
+const { getChangelogChannel, sendBotLogMessage } = require('../services/botOps.js');
 const { getBuildInfo } = require('../services/buildInfo.js');
 
 module.exports = {
@@ -59,8 +56,7 @@ module.exports = {
     });
 
     await sendBotLogMessage(interaction.client, interaction.guildId, {
-      content:
-        `Release notes posted by ${interaction.user.username} in #${changelogChannel.name}`,
+      content: `Release notes posted by ${interaction.user.username} in #${changelogChannel.name}`,
     });
   },
 };

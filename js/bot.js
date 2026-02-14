@@ -42,9 +42,7 @@ let httpServer = null;
 
 function loadCommandModules() {
   const commandsPath = path.join(scriptDirectory, 'commands');
-  const commandFiles = fs
-    .readdirSync(commandsPath)
-    .filter((file) => file.endsWith('.js'));
+  const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
 
   for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
@@ -198,7 +196,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       logger.error('Component interaction handler failed', error);
       // Avoid throwing; fall through so Discord sees an error response.
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'An error occurred handling that interaction.', ephemeral: true });
+        await interaction.reply({
+          content: 'An error occurred handling that interaction.',
+          ephemeral: true,
+        });
       }
       return;
     }

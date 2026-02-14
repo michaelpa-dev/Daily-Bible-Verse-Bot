@@ -1,13 +1,7 @@
-const {
-  ChannelType,
-  EmbedBuilder,
-} = require('discord.js');
+const { ChannelType, EmbedBuilder } = require('discord.js');
 const { getBuildInfo } = require('./buildInfo.js');
 const { issueTrackerUrl } = require('../config.js');
-const {
-  CHANNEL_NAMES,
-  TARGET_DEV_GUILD_ID,
-} = require('../constants/devServerSpec.js');
+const { CHANNEL_NAMES, TARGET_DEV_GUILD_ID } = require('../constants/devServerSpec.js');
 
 const BOT_STATUS_MARKER = '[dbvb-status-message]';
 const BOT_STATUS_TITLE = 'Daily Bible Verse Bot Status';
@@ -44,7 +38,7 @@ function normalizeIssueTrackerUrl(rawUrl) {
       parsed.pathname = `${parsed.pathname}/new`;
     }
     return parsed.toString();
-  } catch (error) {
+  } catch {
     return DEFAULT_ISSUE_TRACKER_URL;
   }
 }
@@ -52,10 +46,7 @@ function normalizeIssueTrackerUrl(rawUrl) {
 function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, stackSnippet }) {
   const baseUrl = normalizeIssueTrackerUrl(issueTrackerUrl);
   const issueUrl = new URL(baseUrl);
-  const title = truncateText(
-    `[Bot Error] ${context || 'runtime'} - ${commandName || 'N/A'}`,
-    120
-  );
+  const title = truncateText(`[Bot Error] ${context || 'runtime'} - ${commandName || 'N/A'}`, 120);
   const body = [
     '### Error context',
     `- Context: ${context || 'runtime'}`,
@@ -165,13 +156,11 @@ async function upsertBotStatusMessage(client, guildId = TARGET_DEV_GUILD_ID) {
   const existingMessage =
     messages.find(
       (message) =>
-        message.author.id === client.user.id && (
-          message.content.includes(BOT_STATUS_MARKER) ||
-          message.embeds.some((embed) =>
-            embed.title === BOT_STATUS_TITLE ||
-            embed.footer?.text === BOT_STATUS_MARKER
-          )
-        )
+        message.author.id === client.user.id &&
+        (message.content.includes(BOT_STATUS_MARKER) ||
+          message.embeds.some(
+            (embed) => embed.title === BOT_STATUS_TITLE || embed.footer?.text === BOT_STATUS_MARKER
+          ))
     ) || null;
 
   const nextEmbed = buildBotStatusEmbed(client);
@@ -221,7 +210,7 @@ async function sendBotLogMessage(client, guildId, payload) {
 
     await botLogsChannel.send(payload);
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 }

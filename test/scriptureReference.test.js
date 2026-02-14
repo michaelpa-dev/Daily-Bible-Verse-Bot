@@ -39,4 +39,3 @@ test('parseScriptureReference supports multi-word books (Song of Solomon 2:8)', 
   assert.equal(parsed.verseSpec, '8');
   assert.deepEqual(parsed.verses, [8]);
 });
-

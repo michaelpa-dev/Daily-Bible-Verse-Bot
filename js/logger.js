@@ -80,8 +80,7 @@ const handleExit = () => {
       .readdirSync(archiveDirectory)
       .filter((file) => file.startsWith('bot_'))
       .sort(
-        (a, b) =>
-          Number(b.split('_')[1].split('.')[0]) - Number(a.split('_')[1].split('.')[0])
+        (a, b) => Number(b.split('_')[1].split('.')[0]) - Number(a.split('_')[1].split('.')[0])
       );
 
     for (let i = 5; i < archiveFiles.length; i += 1) {

@@ -82,8 +82,10 @@ test('handleRandomWebVerse accepts canonical book ids (JHN)', async () => {
 });
 
 test('handleRandomWebVerse rejects invalid scopes', async () => {
-  const result = await handleRandomWebVerse('NOT_A_BOOK', { offset: 0, fetchImpl: createStubFetch() });
+  const result = await handleRandomWebVerse('NOT_A_BOOK', {
+    offset: 0,
+    fetchImpl: createStubFetch(),
+  });
   assert.equal(result.status, 400);
   assert.match(result.body.error, /Invalid scope/);
 });
-

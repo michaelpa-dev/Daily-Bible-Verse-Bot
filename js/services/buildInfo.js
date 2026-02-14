@@ -9,10 +9,7 @@ function resolveGitSha() {
   }
 
   const environmentSha =
-    process.env.GIT_SHA ||
-    process.env.COMMIT_SHA ||
-    process.env.GITHUB_SHA ||
-    '';
+    process.env.GIT_SHA || process.env.COMMIT_SHA || process.env.GITHUB_SHA || '';
   if (environmentSha) {
     cachedGitSha = String(environmentSha).slice(0, 12);
     return cachedGitSha;
@@ -24,7 +21,7 @@ function resolveGitSha() {
       encoding: 'utf8',
     }).trim();
     cachedGitSha = sha || 'unknown';
-  } catch (error) {
+  } catch {
     cachedGitSha = 'unknown';
   }
 

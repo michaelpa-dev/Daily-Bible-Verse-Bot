@@ -5,8 +5,7 @@ const { addVerseSent } = require('./db/statsDB.js');
 const { getTranslationLabel } = require('./constants/translations.js');
 
 async function sendDailyVerse(client, userOrId, passage, options = {}) {
-  const resolvedUserId =
-    typeof userOrId === 'string' ? userOrId : userOrId?.id;
+  const resolvedUserId = typeof userOrId === 'string' ? userOrId : userOrId?.id;
 
   if (!resolvedUserId) {
     logger.warn('Cannot send verse because no user ID was provided.');
@@ -29,8 +28,7 @@ async function sendDailyVerse(client, userOrId, passage, options = {}) {
 
   const verseText = randomVerse.text;
   const verseReference =
-    randomVerse.reference ||
-    `${randomVerse.bookname} ${randomVerse.chapter}:${randomVerse.verse}`;
+    randomVerse.reference || `${randomVerse.bookname} ${randomVerse.chapter}:${randomVerse.verse}`;
   const translationLabel = randomVerse.translationName || getTranslationLabel(translation);
   logger.debug(
     `Sending verse to ${user.username} (${user.id}) ${verseReference} [${translationLabel}]`
@@ -42,7 +40,7 @@ async function sendDailyVerse(client, userOrId, passage, options = {}) {
     .setColor('#0099ff')
     .addFields(
       { name: 'Reference', value: verseReference },
-      { name: 'Translation', value: translationLabel },
+      { name: 'Translation', value: translationLabel }
     )
     .setFooter({ text: 'Sent by Daily Bible Verse Bot' })
     .setThumbnail(client.user.displayAvatarURL());

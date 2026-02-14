@@ -9,7 +9,9 @@ function normalizeReferenceInput(input) {
 }
 
 function parseVerseSpec(rawSpec) {
-  const cleaned = String(rawSpec || '').trim().replace(/\s+/g, '');
+  const cleaned = String(rawSpec || '')
+    .trim()
+    .replace(/\s+/g, '');
   if (!cleaned) {
     return null;
   }
@@ -40,9 +42,7 @@ function parseVerseSpec(rawSpec) {
 
     const match = part.match(/^(\d+)-(\d+)$/);
     if (!match) {
-      throw new Error(
-        `Invalid verse range: "${part}". Use formats like 16, 16-18, or 31-33,46.`
-      );
+      throw new Error(`Invalid verse range: "${part}". Use formats like 16, 16-18, or 31-33,46.`);
     }
 
     const start = Number(match[1]);
@@ -65,7 +65,9 @@ function parseVerseSpec(rawSpec) {
 
   // Keep a canonical spec for display (no spaces).
   const verseSpec = ranges
-    .map((range) => (range.start === range.end ? String(range.start) : `${range.start}-${range.end}`))
+    .map((range) =>
+      range.start === range.end ? String(range.start) : `${range.start}-${range.end}`
+    )
     .join(',');
 
   return {
@@ -96,9 +98,7 @@ function parseScriptureReference(input) {
 
   const bookPart = normalized.slice(0, match.index).trim();
   if (!bookPart) {
-    throw new Error(
-      `Missing book name in reference "${normalized}". Example: "John 3:16".`
-    );
+    throw new Error(`Missing book name in reference "${normalized}". Example: "John 3:16".`);
   }
 
   const bookId = normalizeBookId(bookPart);
@@ -137,4 +137,3 @@ module.exports = {
   parseScriptureReference,
   parseVerseSpec,
 };
-

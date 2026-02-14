@@ -3,7 +3,7 @@ name: Deploy Production (EC2 via SSM)
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   release:
     types:
       - published
@@ -224,6 +224,37 @@ jobs:
           echo "download_url=${download_url}" >> "$GITHUB_OUTPUT"
           echo "download_kind=${download_kind}" >> "$GITHUB_OUTPUT"
 
+      - name: Wait for SSM agent (managed instance online)
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+        run: |
+          set -euo pipefail
+
+          echo "Waiting for SSM PingStatus=Online on ${INSTANCE_ID}..."
+          for attempt in $(seq 1 40); do
+            ping_status="$(aws ssm describe-instance-information \
+              --region "${AWS_REGION}" \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --query "InstanceInformationList[0].PingStatus" \
+              --output text 2>/dev/null || true)"
+
+            if [ "${ping_status}" = "Online" ]; then
+              echo "SSM PingStatus: Online"
+              exit 0
+            fi
+
+            echo "SSM not online yet (attempt ${attempt}/40). PingStatus=${ping_status:-unknown}. Waiting 10s..."
+            sleep 10
+          done
+
+          echo "SSM did not report Online for ${INSTANCE_ID} within timeout." >&2
+          aws ssm describe-instance-information \
+            --region "${AWS_REGION}" \
+            --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+            --output json || true
+          exit 1
+
       - name: Deploy production via SSM RunCommand (GitHub Release artifact)
         id: ssm
         shell: bash
@@ -324,17 +355,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          set +e
-          aws ssm wait command-executed --region "${AWS_REGION}" --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}"
-          wait_exit=$?
-          set -e
+          status=""
+          for attempt in $(seq 1 120); do
+            status="$(aws ssm get-command-invocation \
+              --region "${AWS_REGION}" \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${INSTANCE_ID}" \
+              --query "Status" \
+              --output text 2>/dev/null || true)"
 
-          status="$(aws ssm get-command-invocation \
-            --region "${AWS_REGION}" \
-            --command-id "${COMMAND_ID}" \
-            --instance-id "${INSTANCE_ID}" \
-            --query "Status" \
-            --output text)"
+            if [ -z "${status}" ] || [ "${status}" = "None" ] || [ "${status}" = "null" ]; then
+              echo "Waiting for SSM invocation to appear (attempt ${attempt}/120)..."
+              sleep 5
+              continue
+            fi
+
+            echo "SSM status: ${status} (attempt ${attempt}/120)"
+            case "${status}" in
+              Success|Failed|Cancelled|TimedOut|Undeliverable|Terminated)
+                break
+                ;;
+              *)
+                sleep 10
+                ;;
+            esac
+          done
 
           stdout="$(aws ssm get-command-invocation \
             --region "${AWS_REGION}" \
@@ -356,7 +401,7 @@ jobs:
             echo "${stderr}" >&2
           fi
 
-          if [ "${status}" != "Success" ] || [ "${wait_exit}" -ne 0 ]; then
+          if [ "${status}" != "Success" ]; then
             exit 1
           fi
 

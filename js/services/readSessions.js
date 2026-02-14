@@ -12,7 +12,12 @@ const {
 } = require('discord.js');
 
 const { BOOKS, getBookById } = require('../constants/books.js');
-const { getGroupById, getGroupIdForBook, listGroups, listBooksInCanonOrder } = require('../constants/bookGroups.js');
+const {
+  getGroupById,
+  getGroupIdForBook,
+  listGroups,
+  listBooksInCanonOrder,
+} = require('../constants/bookGroups.js');
 const { getBookChapterCount } = require('../constants/webVerseCounts.js');
 const { logger } = require('../logger.js');
 const { fetchPassageForBookChapter } = require('./bibleApiWeb.js');
@@ -220,7 +225,8 @@ function buildComponents(session) {
 
   const maxChapters = getBookChapterCount(session.bookId);
   const canPrevChapter = session.chapter > 1 || Boolean(computeNextBookId(session.bookId, 'prev'));
-  const canNextChapter = session.chapter < maxChapters || Boolean(computeNextBookId(session.bookId, 'next'));
+  const canNextChapter =
+    session.chapter < maxChapters || Boolean(computeNextBookId(session.bookId, 'next'));
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -236,7 +242,7 @@ function buildComponents(session) {
     new ButtonBuilder()
       .setCustomId(buildCustomId(session.id, 'close'))
       .setLabel('Close')
-      .setStyle(ButtonStyle.Danger),
+      .setStyle(ButtonStyle.Danger)
   );
 
   const row2 = new ActionRowBuilder().addComponents(
@@ -253,7 +259,7 @@ function buildComponents(session) {
     new ButtonBuilder()
       .setCustomId(buildCustomId(session.id, 'jump'))
       .setLabel('Jump')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Secondary)
   );
 
   return [row1, row2, buildGroupSelect(session), buildBookSelect(session)];
@@ -353,13 +359,19 @@ async function handleReadInteraction(interaction) {
 
     if (parsed.action === 'prevPage') {
       session.pageIndex = Math.max(0, session.pageIndex - 1);
-      await interaction.update({ embeds: [buildEmbed(session)], components: buildComponents(session) });
+      await interaction.update({
+        embeds: [buildEmbed(session)],
+        components: buildComponents(session),
+      });
       return true;
     }
 
     if (parsed.action === 'nextPage') {
       session.pageIndex = Math.min(session.pages.length - 1, session.pageIndex + 1);
-      await interaction.update({ embeds: [buildEmbed(session)], components: buildComponents(session) });
+      await interaction.update({
+        embeds: [buildEmbed(session)],
+        components: buildComponents(session),
+      });
       return true;
     }
 
@@ -389,8 +401,15 @@ async function handleReadInteraction(interaction) {
       }
 
       // Chapter navigation always switches to full chapter reading.
-      await loadPassagePages(session, { bookId: nextBookId, chapter: nextChapter, verseSpec: null });
-      await interaction.update({ embeds: [buildEmbed(session)], components: buildComponents(session) });
+      await loadPassagePages(session, {
+        bookId: nextBookId,
+        chapter: nextChapter,
+        verseSpec: null,
+      });
+      await interaction.update({
+        embeds: [buildEmbed(session)],
+        components: buildComponents(session),
+      });
       return true;
     }
 
@@ -413,7 +432,10 @@ async function handleReadInteraction(interaction) {
       }
 
       session.groupId = group.id;
-      await interaction.update({ embeds: [buildEmbed(session)], components: buildComponents(session) });
+      await interaction.update({
+        embeds: [buildEmbed(session)],
+        components: buildComponents(session),
+      });
       return true;
     }
 
@@ -429,7 +451,10 @@ async function handleReadInteraction(interaction) {
       const nextChapter = chapterCount > 0 ? Math.min(session.chapter, chapterCount) : 1;
 
       await loadPassagePages(session, { bookId, chapter: nextChapter, verseSpec: null });
-      await interaction.update({ embeds: [buildEmbed(session)], components: buildComponents(session) });
+      await interaction.update({
+        embeds: [buildEmbed(session)],
+        components: buildComponents(session),
+      });
       return true;
     }
 
@@ -459,7 +484,10 @@ async function handleReadInteraction(interaction) {
       return true;
     }
 
-    await interaction.update({ embeds: [buildEmbed(session)], components: buildComponents(session) });
+    await interaction.update({
+      embeds: [buildEmbed(session)],
+      components: buildComponents(session),
+    });
     return true;
   }
 

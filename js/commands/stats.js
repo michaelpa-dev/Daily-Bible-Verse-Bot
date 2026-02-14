@@ -3,9 +3,7 @@ const { getStats, addCommandExecution } = require('../db/statsDB.js');
 const { version } = require('../config.js');
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('stats')
-    .setDescription('Show bot statistics'),
+  data: new SlashCommandBuilder().setName('stats').setDescription('Show bot statistics'),
   async execute(interaction) {
     await addCommandExecution();
 

@@ -67,7 +67,7 @@ function buildCompletionRow(planId, dayIndex, localDate) {
     new ButtonBuilder()
       .setCustomId(`plan|${planId}|complete|${dayIndex}|${localDate}`)
       .setLabel('Mark Complete ✅')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Success)
   );
 
   return [row];
@@ -137,7 +137,8 @@ async function handlePlanInteraction(interaction) {
   }
 
   if (parsed.action === 'dm') {
-    const dayIndex = Number.isFinite(parsed.dayIndex) && parsed.dayIndex >= 0 ? parsed.dayIndex : plan.dayIndex;
+    const dayIndex =
+      Number.isFinite(parsed.dayIndex) && parsed.dayIndex >= 0 ? parsed.dayIndex : plan.dayIndex;
     const localDate = parsed.localDate || 'today';
 
     try {
@@ -186,4 +187,3 @@ module.exports = {
     parsePlanCustomId,
   },
 };
-

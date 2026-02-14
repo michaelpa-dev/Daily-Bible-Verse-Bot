@@ -49,4 +49,3 @@ test('planEngine new-testament-90 starts at Matthew 1', () => {
   assert.equal(day0[0].bookId, 'MAT');
   assert.equal(day0[0].chapter, 1);
 });
-

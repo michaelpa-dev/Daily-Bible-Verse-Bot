@@ -3,10 +3,7 @@ const { addCommandExecution } = require('../db/statsDB.js');
 const { TARGET_DEV_GUILD_ID } = require('../constants/devServerSpec.js');
 const { requireOwnerOrMaintainer } = require('../services/permissionUtils.js');
 const { bootstrapDevServer } = require('../services/bootstrapDevServer.js');
-const {
-  buildBootstrapSummaryMessage,
-  sendBotLogMessage,
-} = require('../services/botOps.js');
+const { buildBootstrapSummaryMessage, sendBotLogMessage } = require('../services/botOps.js');
 
 function splitMessage(content, maxChunkLength = 1800) {
   if (content.length <= maxChunkLength) {
@@ -46,17 +43,14 @@ module.exports = {
         .setDescription('Preview changes without applying them (default: true)')
     )
     .addBooleanOption((option) =>
-      option
-        .setName('apply')
-        .setDescription('Apply the bootstrap changes (default: false)')
+      option.setName('apply').setDescription('Apply the bootstrap changes (default: false)')
     ),
   async execute(interaction) {
     await addCommandExecution();
 
     if (!interaction.guildId || interaction.guildId !== TARGET_DEV_GUILD_ID) {
       await interaction.reply({
-        content:
-          `This command is only allowed in the configured dev guild (${TARGET_DEV_GUILD_ID}).`,
+        content: `This command is only allowed in the configured dev guild (${TARGET_DEV_GUILD_ID}).`,
         ephemeral: true,
       });
       return;
@@ -72,7 +66,7 @@ module.exports = {
     const applyOption = interaction.options.getBoolean('apply') === true;
     const dryRunOption = interaction.options.getBoolean('dry_run');
     const applyChanges = applyOption;
-    const mode = applyChanges ? 'apply' : (dryRunOption === false ? 'inspect' : 'dry-run');
+    const mode = applyChanges ? 'apply' : dryRunOption === false ? 'inspect' : 'dry-run';
 
     const report = await bootstrapDevServer(interaction.guild, { applyChanges });
     const summary = buildBootstrapSummaryMessage(mode, report);
@@ -94,8 +88,7 @@ module.exports = {
 
     if (!sentToBotLogs) {
       await interaction.followUp({
-        content:
-          'Summary could not be posted to #bot-logs because that channel was not found.',
+        content: 'Summary could not be posted to #bot-logs because that channel was not found.',
         ephemeral: true,
       });
     }
