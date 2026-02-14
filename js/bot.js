@@ -23,6 +23,8 @@ const {
 const { createHttpServer } = require('./api/httpServer.js');
 const { handlePaginationInteraction } = require('./services/paginationInteractions.js');
 const { handleReadInteraction } = require('./services/readSessions.js');
+const { handlePlanInteraction } = require('./services/planInteractions.js');
+const { initializePlanScheduler } = require('./services/planScheduler.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
 const BOT_STATUS_SCHEDULE = '*/5 * * * * *';
@@ -163,6 +165,12 @@ client.once(Events.ClientReady, async () => {
   await Promise.allSettled(guildRegistrations);
 
   scheduleRecurringJobs();
+
+  try {
+    await initializePlanScheduler(client);
+  } catch (error) {
+    logger.error('Failed to initialize reading plan scheduler', error);
+  }
 });
 
 client.on(Events.GuildCreate, async (guild) => {
@@ -181,6 +189,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       const handled =
         (interaction.isButton() ? await handlePaginationInteraction(interaction) : false) ||
+        (interaction.isButton() ? await handlePlanInteraction(interaction) : false) ||
         (await handleReadInteraction(interaction));
       if (handled) {
         return;

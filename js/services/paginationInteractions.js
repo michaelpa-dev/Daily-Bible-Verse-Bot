@@ -79,7 +79,8 @@ function buildPaginationComponents(session) {
       .setStyle(ButtonStyle.Danger),
   );
 
-  return [row];
+  const extras = Array.isArray(session.extraComponents) ? session.extraComponents : [];
+  return [row, ...extras];
 }
 
 function createPaginatedMessage(options) {
@@ -151,4 +152,3 @@ module.exports = {
     parseCustomId,
   },
 };
-

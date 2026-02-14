@@ -31,6 +31,7 @@ function createPaginationSession(options) {
     title: String(options?.title || '').trim(),
     color: options?.color ?? null,
     footer: String(options?.footer || '').trim(),
+    extraComponents: Array.isArray(options?.extraComponents) ? options.extraComponents : [],
     pageIndex: 0,
     createdAt: now,
     expiresAt,
@@ -75,4 +76,3 @@ module.exports = {
     sessions,
   },
 };
-
