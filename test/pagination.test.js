@@ -10,7 +10,8 @@ test('paginateLines does not split logical lines across pages', () => {
     '**3** God said, "Let there be light."',
   ];
 
-  const pages = paginateLines(lines, { maxChars: 60 });
+  // Keep pages small enough to force pagination, but large enough to avoid truncating any line.
+  const pages = paginateLines(lines, { maxChars: 90 });
   assert.ok(pages.length >= 2);
 
   // Each original line should appear as a complete line in exactly one page.
@@ -28,4 +29,3 @@ test('paginateLines truncates a single overlong line instead of splitting it', (
   assert.ok(pages[0].endsWith('...'));
   assert.ok(pages[0].length <= 80);
 });
-
