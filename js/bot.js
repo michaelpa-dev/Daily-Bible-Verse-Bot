@@ -20,6 +20,7 @@ const {
   logRuntimeError,
   upsertBotStatusMessage,
 } = require('./services/botOps.js');
+const { createHttpServer } = require('./api/httpServer.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
 const BOT_STATUS_SCHEDULE = '*/5 * * * * *';
@@ -33,6 +34,7 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+let httpServer = null;
 
 function loadCommandModules() {
   const commandsPath = path.join(scriptDirectory, 'commands');
@@ -204,10 +206,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
 async function shutdown() {
   try {
     client.destroy();
+    if (httpServer) {
+      await new Promise((resolve) => httpServer.close(resolve));
+      httpServer = null;
+    }
     await closeDatabase();
   } catch (error) {
     logger.warn(`Failed to close database cleanly: ${error}`);
   }
+}
+
+async function startHttpApiServer() {
+  const disabled = String(process.env.DISABLE_HTTP_API || '').toLowerCase() === 'true';
+  if (disabled) {
+    logger.info('HTTP API server disabled via DISABLE_HTTP_API=true');
+    return;
+  }
+
+  const bindHost = String(process.env.HTTP_BIND || '127.0.0.1').trim() || '127.0.0.1';
+  const portRaw = process.env.HTTP_PORT || process.env.PORT || '3000';
+  const port = Number(portRaw);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid HTTP port: ${portRaw}`);
+  }
+
+  httpServer = createHttpServer();
+  await new Promise((resolve) => httpServer.listen(port, bindHost, resolve));
+  logger.info(`HTTP API server listening on http://${bindHost}:${port}`);
 }
 
 async function runBot() {
@@ -218,6 +243,7 @@ async function runBot() {
   }
 
   loadCommandModules();
+  await startHttpApiServer();
   await client.login(botToken);
 }
 
