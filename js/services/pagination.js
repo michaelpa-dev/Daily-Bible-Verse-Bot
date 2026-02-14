@@ -1,6 +1,8 @@
 function paginateLines(lines, options = {}) {
   const maxChars = Number(options.maxChars || 3800);
-  if (!Number.isFinite(maxChars) || maxChars < 1000) {
+  // This utility is used for Discord embeds (4096 char limit) but is also used in unit tests
+  // with smaller page sizes.
+  if (!Number.isFinite(maxChars) || maxChars < 50) {
     throw new Error(`Invalid maxChars: ${options.maxChars}`);
   }
 
