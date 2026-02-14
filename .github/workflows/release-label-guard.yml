@@ -1,0 +1,52 @@
+name: Release Label Guard
+
+on:
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - edited
+
+permissions:
+  pull-requests: read
+  contents: read
+
+concurrency:
+  group: release-label-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  enforce:
+    name: Enforce Release Bump Label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release bump label present
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const allowed = new Set(['release:patch', 'release:minor', 'release:major']);
+            const labels = (pr.labels || []).map((label) => String(label.name || '').toLowerCase());
+            const matches = labels.filter((name) => allowed.has(name));
+
+            core.info(`PR #${pr.number} base=${pr.base.ref} head=${pr.head.ref}`);
+            core.info(`Release bump labels found: ${matches.join(', ') || '(none)'}`);
+
+            if (matches.length === 0) {
+              core.setFailed(
+                'Missing release bump label. Add exactly one label: release:patch, release:minor, or release:major.'
+              );
+              return;
+            }
+
+            if (matches.length > 1) {
+              core.setFailed(
+                `Multiple release bump labels present: ${matches.join(', ')}. Keep exactly one.`
+              );
+            }
+

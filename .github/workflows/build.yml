@@ -82,11 +82,112 @@ jobs:
 
           echo "asset_path=${asset_name}" >> "$GITHUB_OUTPUT"
 
+      - name: Build release notes body
+        id: notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if [ "${PRERELEASE}" = "true" ]; then
+            cat > release_body.md <<EOF
+          Canary build: \`${RELEASE_TAG}\`
+
+          This is an automated prerelease build for the \`canary\` branch.
+          EOF
+
+            echo "release_body_path=release_body.md" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Stable release: generate notes, then wrap in the repo's release template.
+          # "Previous" tag = second newest v* tag (the newest is the one we're building).
+          previous_tag="$(git tag --list 'v*' --sort=-v:refname | sed -n '2p' || true)"
+
+          generated_notes="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -H "Accept: application/vnd.github+json" \
+            -f tag_name="${RELEASE_TAG}" \
+            ${previous_tag:+-f previous_tag_name="${previous_tag}"} \
+            -f target_commitish="${GITHUB_SHA}" \
+            --jq .body)"
+
+          # Avoid duplicating the Full Changelog link; we'll add our own at the end to match older releases.
+          generated_notes_stripped="$(printf '%s' "${generated_notes}" | sed '/\\*\\*Full Changelog\\*\\*/d')"
+
+          changelog_url="https://github.com/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}"
+          if [ -n "${previous_tag}" ]; then
+            changelog_url="https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${RELEASE_TAG}"
+          fi
+
+          deployment_changes="false"
+          if [ -n "${previous_tag}" ]; then
+            if git diff --name-only "${previous_tag}..${RELEASE_TAG}" | grep -E -q '^(\\.github/workflows/|scripts/deploy/|infra/|docs/deployments/)'; then
+              deployment_changes="true"
+            fi
+          fi
+
+          cat > release_body.md <<EOF
+          ## 🚀 New Release: Daily Bible Verse Bot ${RELEASE_TAG} 📖
+
+          We're excited to publish ${RELEASE_TAG}! This release ships new functionality and improvements for the Daily Bible Verse Bot.
+
+          ${generated_notes_stripped}
+
+          EOF
+
+          if [ "${deployment_changes}" = "true" ]; then
+            cat >> release_body.md <<EOF
+
+          ## Deployment
+          - This release includes deployment or infrastructure changes. Review \`docs/deployments/runbook.md\` before promoting.
+          EOF
+          fi
+
+          cat >> release_body.md <<'EOF'
+
+          🔗 **Features:**
+          - Receive a daily Bible verse delivered to your DM.
+          - Request a random Bible verse on demand.
+          - Subscribe to daily Bible verses and unsubscribe anytime.
+          - Check bot statistics, including user subscriptions and command usage.
+          - Customizable status messages to keep your server engaged.
+
+          📝 **Usage:**
+          1. Clone this repository to your local machine.
+          2. Install dependencies using `npm install`.
+          3. Configure your bot by copying `cfg/config-sample.json` to `cfg/config.json` and adding your bot token (local only).
+          4. Run the bot using `npm start` for local development.
+          5. Production deployments use Docker on EC2 via GitHub Releases + AWS SSM (see `docs/deployments/runbook.md`).
+
+          📚 **Available Commands:**
+          - `/subscribe`: Subscribe to daily Bible verses.
+          - `/unsubscribe`: Unsubscribe from receiving daily verses.
+          - `/stats`: View bot statistics and command usage.
+          - `/randomverse`: Get a random Bible verse via DM.
+          - `/support`: Get a link to the GitHub issue tracker for support.
+
+          📢 **Contributions and Feedback:**
+          We value your contributions and feedback as we continue to improve the Daily Bible Verse Bot.
+
+          🔗 **Links:**
+          - [Repository](https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot)
+
+          EOF
+
+          printf '\n**Full Changelog**: %s\n' "${changelog_url}" >> release_body.md
+
+          echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_body_path=release_body.md" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release (upload asset)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.release_tag }}
           name: ${{ steps.meta.outputs.release_name }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.release_body_path }}
+          generate_release_notes: false
           files: ${{ steps.package.outputs.asset_path }}
