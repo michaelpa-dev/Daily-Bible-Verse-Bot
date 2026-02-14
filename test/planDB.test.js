@@ -95,3 +95,56 @@ test('planDB markComplete updates streak when previousDay=true', async () => {
   }
 });
 
+test('planDB upsert resets derived state when replacing an existing plan', async () => {
+  const sandbox = createTempDatabaseSandbox();
+  const { database, planDB } = loadDbModulesForSandbox(sandbox);
+
+  try {
+    const plan = await planDB.upsertPlan({
+      ownerType: 'guild',
+      ownerId: 'guild-reset',
+      channelId: 'channel-reset',
+      planType: 'custom',
+      scope: 'NT',
+      books: [],
+      paceType: 'chapters',
+      paceValue: 2,
+      timezone: 'UTC',
+      postTime: '08:00',
+      startDate: '2026-02-14',
+    });
+
+    await planDB.bumpDayIndex(plan.id, '2026-02-14');
+    await planDB.markComplete(plan.id, '2026-02-14');
+
+    const progressed = await planDB.getPlanById(plan.id);
+    assert.equal(progressed.dayIndex, 1);
+    assert.equal(progressed.lastPostedOn, '2026-02-14');
+    assert.equal(progressed.lastCompletedOn, '2026-02-14');
+    assert.equal(progressed.streak, 1);
+
+    // Replacing the plan should reset derived state so the scheduler behaves predictably.
+    await planDB.upsertPlan({
+      ownerType: 'guild',
+      ownerId: 'guild-reset',
+      channelId: 'channel-reset',
+      planType: 'custom',
+      scope: 'OT',
+      books: [],
+      paceType: 'chapters',
+      paceValue: 1,
+      timezone: 'UTC',
+      postTime: '08:00',
+      startDate: '2026-02-15',
+    });
+
+    const replaced = await planDB.getPlan('guild', 'guild-reset');
+    assert.equal(replaced.dayIndex, 0);
+    assert.equal(replaced.lastPostedOn, null);
+    assert.equal(replaced.lastCompletedOn, null);
+    assert.equal(replaced.streak, 0);
+  } finally {
+    await cleanupSandbox(sandbox, database);
+  }
+});
+
