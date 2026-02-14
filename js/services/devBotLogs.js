@@ -357,52 +357,60 @@ async function flush() {
 
   // Drain a bounded batch and send it as 1..N discord messages under the 2000 char limit.
   const batch = state.queue.splice(0, state.config.maxBatchItems);
-  const formatted = batch.map(formatEntry);
+  const chunks = [];
+  let current = { lines: [], entries: [] };
 
-  const messages = [];
-  let currentLines = [];
-
-  const pushCurrent = () => {
-    if (currentLines.length === 0) {
+  const pushChunk = () => {
+    if (current.entries.length === 0) {
       return;
     }
-    messages.push(formatDiscordMessage(currentLines));
-    currentLines = [];
+    chunks.push(current);
+    current = { lines: [], entries: [] };
   };
 
-  for (const line of formatted) {
-    const nextLines = currentLines.concat(line);
+  for (const entry of batch) {
+    const line = formatEntry(entry);
+    const nextLines = current.lines.concat(line);
     const nextMessage = formatDiscordMessage(nextLines);
 
     if (nextMessage.length > state.config.maxMessageChars) {
-      pushCurrent();
+      pushChunk();
 
       const single = formatDiscordMessage([line]);
       if (single.length > state.config.maxMessageChars) {
         // Extremely defensive: truncate line content if it still won't fit.
         const clipped = line.slice(0, Math.max(0, state.config.maxMessageChars - 50)) + '...';
-        messages.push(formatDiscordMessage([clipped]));
+        chunks.push({ lines: [clipped], entries: [entry] });
       } else {
-        currentLines = [line];
+        current = { lines: [line], entries: [entry] };
       }
       continue;
     }
 
-    currentLines = nextLines;
+    current.lines = nextLines;
+    current.entries.push(entry);
   }
 
-  pushCurrent();
+  pushChunk();
 
-  try {
-    for (const message of messages) {
-      await sendToDiscord(message);
+  for (let i = 0; i < chunks.length; i += 1) {
+    const chunk = chunks[i];
+    try {
+      await sendToDiscord(formatDiscordMessage(chunk.lines));
+    } catch (error) {
+      // Requeue only the entries that were not sent yet. Entries in earlier chunks were
+      // already posted successfully and should not be duplicated.
+      const unsent = [];
+      for (let j = i; j < chunks.length; j += 1) {
+        unsent.push(...chunks[j].entries);
+      }
+      state.queue.unshift(...unsent);
+      registerFailure(error);
+      return;
     }
-    registerSuccess();
-  } catch (error) {
-    // Put the drained batch back at the front so we don't lose information.
-    state.queue.unshift(...batch);
-    registerFailure(error);
   }
+
+  registerSuccess();
 }
 
 function start(client, options = {}) {

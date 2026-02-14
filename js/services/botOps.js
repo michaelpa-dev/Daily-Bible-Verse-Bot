@@ -10,6 +10,7 @@ const {
   TARGET_DEV_GUILD_ID,
 } = require('../constants/devServerSpec.js');
 const devBotLogs = require('./devBotLogs.js');
+const { formatDiscordTimestamp } = require('./discordFormat.js');
 
 const BOT_STATUS_MARKER = '[dbvb-status-message]';
 const BOT_STATUS_TITLE = 'Daily Bible Verse Bot Status';
@@ -22,19 +23,6 @@ const DEFAULT_ISSUE_TRACKER_URL =
 // - total embed size max: 6000
 // Keep truncation conservative so operational logging never crashes the bot.
 const DISCORD_EMBED_FIELD_VALUE_MAX = 1024;
-
-function formatDiscordTimestamp(iso) {
-  if (!iso) {
-    return 'unknown';
-  }
-
-  const timestamp = new Date(iso).getTime();
-  if (!Number.isFinite(timestamp)) {
-    return 'unknown';
-  }
-
-  return `<t:${Math.floor(timestamp / 1000)}:F>`;
-}
 
 function formatDuration(milliseconds) {
   const totalSeconds = Math.floor(milliseconds / 1000);

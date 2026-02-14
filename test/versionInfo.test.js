@@ -15,7 +15,7 @@ test('getVersionInfo prefers env RELEASE_TAG over manifest tag', () => {
   const manifestPath = path.join(dir, 'version.json');
   fs.writeFileSync(
     manifestPath,
-    JSON.stringify({ tag: 'v1.2.3', sha: 'abc', builtAt: '2026-01-01T00:00:00Z' })
+    JSON.stringify({ tag: 'v1.2.3', sha: 'abc', builtAt: '2024-01-01T00:00:00Z' })
   );
 
   const packageJsonPath = path.join(dir, 'package.json');
@@ -26,7 +26,7 @@ test('getVersionInfo prefers env RELEASE_TAG over manifest tag', () => {
       RELEASE_TAG: 'canary-deadbeef',
       GIT_SHA: 'deadbeefcafebabe',
       DEPLOY_ENVIRONMENT: 'canary',
-      DEPLOYED_AT: '2026-02-01T12:00:00Z',
+      DEPLOYED_AT: '2025-02-01T12:00:00Z',
     },
     manifestPath,
     packageJsonPath,
@@ -36,8 +36,8 @@ test('getVersionInfo prefers env RELEASE_TAG over manifest tag', () => {
   assert.equal(info.releaseTag, 'canary-deadbeef');
   assert.equal(info.packageVersion, '9.9.9');
   assert.equal(info.gitSha, 'deadbeefcafe');
-  assert.equal(info.builtAt, '2026-01-01T00:00:00.000Z');
-  assert.equal(info.deployedAt, '2026-02-01T12:00:00.000Z');
+  assert.equal(info.builtAt, '2024-01-01T00:00:00.000Z');
+  assert.equal(info.deployedAt, '2025-02-01T12:00:00.000Z');
   assert.equal(info.runtimeEnvironment, 'canary');
 });
 

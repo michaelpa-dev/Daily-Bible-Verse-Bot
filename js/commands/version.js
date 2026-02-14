@@ -1,19 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { addCommandExecution } = require('../db/statsDB.js');
 const { getBuildInfo } = require('../services/buildInfo.js');
-
-function formatDiscordTimestamp(iso) {
-  if (!iso) {
-    return 'unknown';
-  }
-
-  const timestamp = new Date(iso).getTime();
-  if (!Number.isFinite(timestamp)) {
-    return 'unknown';
-  }
-
-  return `<t:${Math.floor(timestamp / 1000)}:F>`;
-}
+const { formatDiscordTimestamp } = require('../services/discordFormat.js');
 
 module.exports = {
   data: new SlashCommandBuilder()

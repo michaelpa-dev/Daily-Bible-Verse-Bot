@@ -29,7 +29,15 @@ function buildStandardEmbed(options = {}) {
   }
 
   embed.setColor(options.color || COLORS.primary);
-  embed.setTimestamp(options.timestamp instanceof Date ? options.timestamp : new Date());
+  // Consistent timestamps across bot messages are intentional.
+  // If a caller truly needs to omit a timestamp, pass `timestamp: null`.
+  if (options.timestamp === null) {
+    // omit
+  } else if (options.timestamp instanceof Date) {
+    embed.setTimestamp(options.timestamp);
+  } else {
+    embed.setTimestamp(new Date());
+  }
 
   if (options.footerText) {
     embed.setFooter({ text: String(options.footerText) });
@@ -47,4 +55,3 @@ module.exports = {
   buildScriptureFooter,
   buildStandardEmbed,
 };
-
