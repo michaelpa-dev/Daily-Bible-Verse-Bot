@@ -203,6 +203,46 @@ jobs:
           generate_release_notes: false
           files: ${{ steps.package.outputs.asset_path }}
 
+      - name: Prune old canary releases (keep latest 5)
+        if: steps.meta.outputs.prerelease == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          echo "Pruning old canary prereleases (tag prefix canary-), keeping newest 5..."
+
+          releases="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate)"
+          to_delete="$(printf '%s' "${releases}" | jq -r '
+            [
+              .[]
+              | select(.prerelease == true)
+              | select(.tag_name | startswith(\"canary-\"))
+              | { tag: .tag_name, created: .created_at }
+            ]
+            | sort_by(.created)
+            | reverse
+            | .[5:]
+            | .[].tag
+          ')"
+
+          if [ -z "${to_delete}" ] || [ "${to_delete}" = "null" ]; then
+            echo "No old canary releases to delete."
+            exit 0
+          fi
+
+          echo "Deleting the following canary releases:"
+          echo "${to_delete}"
+
+          while IFS= read -r tag; do
+            if [ -z "${tag}" ]; then
+              continue
+            fi
+            echo "Deleting canary release ${tag}..."
+            gh release delete "${tag}" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag
+          done <<< "${to_delete}"
+
       - name: Dispatch production deploy (release-only)
         if: steps.meta.outputs.prerelease == 'false'
         shell: bash
