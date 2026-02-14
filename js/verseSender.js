@@ -14,7 +14,13 @@ async function sendDailyVerse(client, userOrId, passage, options = {}) {
 
   logger.debug(`Sending ${passage} verse to user: ${resolvedUserId}`);
 
-  const user = await client.users.fetch(resolvedUserId);
+  let user = null;
+  try {
+    user = await client.users.fetch(resolvedUserId);
+  } catch (error) {
+    logger.warn(`Failed to resolve user ${resolvedUserId} for verse delivery`, error);
+    return false;
+  }
   if (!user) {
     return false;
   }
