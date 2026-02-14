@@ -27,7 +27,9 @@ const { handlePlanInteraction } = require('./services/planInteractions.js');
 const { initializePlanScheduler } = require('./services/planScheduler.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
-const BOT_STATUS_SCHEDULE = '*/5 * * * * *';
+// Avoid excessive Discord API calls. Updating a "status" message every 5 seconds is noisy and can
+// contribute to rate limiting or instability.
+const BOT_STATUS_SCHEDULE = '*/1 * * * *';
 const DAILY_VERSE_SCHEDULE = '0 9 * * *';
 const DEFAULT_STATUS = 'the Word of God';
 const DELIVERY_CONCURRENCY = 5;
@@ -156,11 +158,12 @@ client.once(Events.ClientReady, async () => {
 
   await updateActiveGuilds(client);
 
-  const guildRegistrations = [];
+  // Register commands with light throttling. Doing a burst in parallel can trigger rate limits.
   for (const guild of client.guilds.cache.values()) {
-    guildRegistrations.push(registerSlashCommands(guild));
+    await registerSlashCommands(guild);
+    // Small delay to avoid spiky REST traffic on startup.
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  await Promise.allSettled(guildRegistrations);
 
   scheduleRecurringJobs();
 
@@ -279,7 +282,7 @@ async function runBot() {
 
 runBot().catch((error) => {
   logger.error('Bot failed to start', error);
-  process.exitCode = 1;
+  process.exit(1);
 });
 
 process.once('SIGINT', async () => {
@@ -296,10 +299,20 @@ process.on('unhandledRejection', async (reason) => {
   const error =
     reason instanceof Error ? reason : new Error(`Unhandled rejection: ${String(reason)}`);
   logger.error('Unhandled promise rejection', error);
-  await logRuntimeError(client, error, 'unhandledRejection');
+  try {
+    await logRuntimeError(client, error, 'unhandledRejection');
+  } catch (logError) {
+    logger.warn('Failed to send runtime error log for unhandledRejection', logError);
+  }
+  process.exit(1);
 });
 
 process.on('uncaughtException', async (error) => {
   logger.error('Uncaught exception', error);
-  await logRuntimeError(client, error, 'uncaughtException');
+  try {
+    await logRuntimeError(client, error, 'uncaughtException');
+  } catch (logError) {
+    logger.warn('Failed to send runtime error log for uncaughtException', logError);
+  }
+  process.exit(1);
 });

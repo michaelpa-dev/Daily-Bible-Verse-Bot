@@ -36,7 +36,7 @@ test('buildIssueCreationUrl returns a GitHub issue link with prefilled fields', 
     commandName: '/subscribe',
     userTag: 'tester (123)',
     errorSummary: 'something failed',
-    stackSnippet: 'Error: stack',
+    correlationId: 'corr-123',
   });
 
   assert.match(issueUrl, /github\.com/);
@@ -46,6 +46,7 @@ test('buildIssueCreationUrl returns a GitHub issue link with prefilled fields', 
   assert.equal(parsed.searchParams.get('labels'), 'bug');
   assert.match(parsed.searchParams.get('title') || '', /Bot Error/);
   assert.match(parsed.searchParams.get('body') || '', /Error context/);
+  assert.match(parsed.searchParams.get('body') || '', /CorrelationId/i);
 });
 
 test('buildBotStatusEmbed uses embed format with marker footer', () => {

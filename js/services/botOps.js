@@ -2,11 +2,13 @@ const { ChannelType, EmbedBuilder } = require('discord.js');
 const { getBuildInfo } = require('./buildInfo.js');
 const { issueTrackerUrl } = require('../config.js');
 const { CHANNEL_NAMES, TARGET_DEV_GUILD_ID } = require('../constants/devServerSpec.js');
+const { logger } = require('../logger.js');
 
 const BOT_STATUS_MARKER = '[dbvb-status-message]';
 const BOT_STATUS_TITLE = 'Daily Bible Verse Bot Status';
 const DEFAULT_ISSUE_TRACKER_URL =
   'https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot/issues/new';
+const EMBED_FIELD_VALUE_LIMIT = 1024;
 
 function formatDuration(milliseconds) {
   const totalSeconds = Math.floor(milliseconds / 1000);
@@ -43,7 +45,7 @@ function normalizeIssueTrackerUrl(rawUrl) {
   }
 }
 
-function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, stackSnippet }) {
+function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, correlationId }) {
   const baseUrl = normalizeIssueTrackerUrl(issueTrackerUrl);
   const issueUrl = new URL(baseUrl);
   const title = truncateText(`[Bot Error] ${context || 'runtime'} - ${commandName || 'N/A'}`, 120);
@@ -52,18 +54,16 @@ function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, st
     `- Context: ${context || 'runtime'}`,
     `- Command: ${commandName || 'N/A'}`,
     `- User: ${userTag || 'N/A'}`,
+    correlationId ? `- CorrelationId: ${correlationId}` : null,
     `- Timestamp (UTC): ${new Date().toISOString()}`,
     '',
     '### Summary',
-    truncateText(errorSummary || 'Unknown error', 600),
-    '',
-    '### Stack snippet',
-    '```',
-    truncateText(stackSnippet || 'No stack available', 700),
-    '```',
+    truncateText(errorSummary || 'Unknown error', 400),
     '',
     '_Created from Discord #bot-logs._',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   issueUrl.searchParams.set('title', title);
   issueUrl.searchParams.set('body', body);
@@ -174,31 +174,72 @@ async function upsertBotStatusMessage(client, guildId = TARGET_DEV_GUILD_ID) {
   });
 }
 
-function buildErrorLogPayload({ context, userTag, commandName, error }) {
+function buildErrorLogPayload({ context, userTag, commandName, error, correlationId }) {
   const errorSummary = truncateText(error?.message || String(error), 400);
-  const stackSnippet = truncateText(error?.stack || 'No stack available', 900);
+  const stackSnippet = truncateText(error?.stack || 'No stack available', 960);
   const issueCreationUrl = buildIssueCreationUrl({
     context,
     commandName,
     userTag,
     errorSummary,
-    stackSnippet,
+    correlationId,
   });
 
-  const embed = new EmbedBuilder()
-    .setTitle('Bot Error Event')
-    .setColor('#c0392b')
-    .setTimestamp()
-    .addFields(
-      { name: 'Context', value: context || 'runtime', inline: true },
-      { name: 'Command', value: commandName || 'N/A', inline: true },
-      { name: 'User', value: userTag || 'N/A', inline: true },
-      { name: 'Summary', value: errorSummary || 'Unknown error' },
+  try {
+    const fields = [
+      {
+        name: 'Context',
+        value: truncateText(context || 'runtime', EMBED_FIELD_VALUE_LIMIT),
+        inline: true,
+      },
+      {
+        name: 'Command',
+        value: truncateText(commandName || 'N/A', EMBED_FIELD_VALUE_LIMIT),
+        inline: true,
+      },
+      {
+        name: 'User',
+        value: truncateText(userTag || 'N/A', EMBED_FIELD_VALUE_LIMIT),
+        inline: true,
+      },
+      correlationId
+        ? {
+            name: 'CorrelationId',
+            value: truncateText(String(correlationId), EMBED_FIELD_VALUE_LIMIT),
+            inline: false,
+          }
+        : null,
+      { name: 'Summary', value: truncateText(errorSummary || 'Unknown error', 800) },
       { name: 'Stack', value: `\`\`\`\n${stackSnippet}\n\`\`\`` },
-      { name: 'Issue', value: `[Create GitHub issue](${issueCreationUrl})` }
-    );
+      {
+        name: 'Issue',
+        value: truncateText(`[Create GitHub issue](${issueCreationUrl})`, EMBED_FIELD_VALUE_LIMIT),
+      },
+    ].filter(Boolean);
 
-  return { embeds: [embed] };
+    const embed = new EmbedBuilder()
+      .setTitle('Bot Error Event')
+      .setColor('#c0392b')
+      .setTimestamp()
+      .addFields(...fields);
+
+    return { embeds: [embed] };
+  } catch (embedError) {
+    const fallbackLines = [
+      '**Bot Error Event**',
+      `- Context: ${context || 'runtime'}`,
+      `- Command: ${commandName || 'N/A'}`,
+      `- User: ${userTag || 'N/A'}`,
+      correlationId ? `- CorrelationId: ${correlationId}` : null,
+      `- Summary: ${errorSummary || 'Unknown error'}`,
+      `- Issue: ${issueCreationUrl}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    logger.warn('Failed to build error embed payload; falling back to text.', embedError);
+    return { content: truncateText(fallbackLines, 1900) };
+  }
 }
 
 async function sendBotLogMessage(client, guildId, payload) {
@@ -210,7 +251,11 @@ async function sendBotLogMessage(client, guildId, payload) {
 
     await botLogsChannel.send(payload);
     return true;
-  } catch {
+  } catch (error) {
+    logger.warn(
+      `Failed to send bot log message to guild ${guildId || 'unknown'} (missing perms/channel?).`,
+      error
+    );
     return false;
   }
 }
