@@ -1,8 +1,9 @@
 const { SlashCommandBuilder } = require('discord.js');
 
 const { addCommandExecution } = require('../db/statsDB.js');
+const { getBookById } = require('../constants/books.js');
 const { logger } = require('../logger.js');
-const { buildReadMessage, createReadSession } = require('../services/readSessions.js');
+const { buildReadMessage, buildReadResolutionMessage, createReadSession } = require('../services/readSessions.js');
 const { logCommandError } = require('../services/botOps.js');
 const { buildStandardEmbed, COLORS } = require('../services/messageStyle.js');
 
@@ -24,17 +25,32 @@ module.exports = {
     logger.info(`Slash command /read called by ${interaction.user.id} reference="${reference}"`);
 
     try {
-      const session = await createReadSession({
+      const result = await createReadSession({
         userId: interaction.user.id,
         reference,
       });
 
+      if (result.kind === 'needs_confirmation') {
+        const payload = buildReadResolutionMessage(result.session);
+        await interaction.reply({
+          ...payload,
+          ephemeral: Boolean(interaction.guildId),
+        });
+        return;
+      }
+
+      const session = result.session;
       const payload = buildReadMessage(session);
 
       if (interaction.guildId) {
+        const book = getBookById(session.bookId);
+        const resolvedDisplay = book
+          ? `${book.name} (${book.id}) ${session.chapter}${session.verseSpec ? `:${session.verseSpec}` : ''}`
+          : `${session.bookId} ${session.chapter}${session.verseSpec ? `:${session.verseSpec}` : ''}`;
+
         const embed = buildStandardEmbed({
           title: 'Check your DMs',
-          description: 'I sent you a page-turner reader session.',
+          description: `Resolved: **${resolvedDisplay}**\n\nI sent you a page-turner reader session.`,
           color: COLORS.primary,
           footerText: 'Use /read again to jump to a new reference.',
         });

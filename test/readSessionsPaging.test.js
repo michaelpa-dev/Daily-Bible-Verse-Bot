@@ -40,12 +40,14 @@ test('/read paging uses smaller pages and never splits verse lines', async () =>
     reference: 'JHN 3',
     fetchImpl,
   });
+  assert.equal(session.kind, 'ready');
+  const active = session.session;
 
-  assert.ok(Array.isArray(session.pages));
-  assert.ok(session.pages.length >= 2, 'expected multiple pages for long chapter');
+  assert.ok(Array.isArray(active.pages));
+  assert.ok(active.pages.length >= 2, 'expected multiple pages for long chapter');
 
   // Page size target is ~1700 chars; never exceed it.
-  for (const page of session.pages) {
+  for (const page of active.pages) {
     assert.ok(page.length <= 1700, `page exceeded max chars: ${page.length}`);
   }
 
@@ -61,7 +63,7 @@ test('/read paging uses smaller pages and never splits verse lines', async () =>
   });
 
   for (const line of expectedLines) {
-    const hits = session.pages.filter((page) => page.split('\n').includes(line)).length;
+    const hits = active.pages.filter((page) => page.split('\n').includes(line)).length;
     assert.equal(hits, 1, `expected verse line to appear once: ${line.slice(0, 30)}...`);
   }
 });
