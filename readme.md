@@ -8,7 +8,7 @@ Daily Bible Verse Bot is a Discord bot that delivers daily verses, random verse 
 - Random verse delivery on-demand.
 - Per-user translation preferences.
 - Post passages in-channel or via DM with robust reference parsing and pagination (`/passage`).
-- DM “page-turner” reader mode with navigation controls (`/read`).
+- DM "page-turner" reader mode with navigation controls (`/read`).
 - Reading plans persisted to SQLite and scheduled inside the bot process (`/plan ...`).
 - Internal HTTP endpoints for scoped random WEB verse selection (`/data/web/random/...`).
 - Dev server bootstrap automation for roles/channels/overwrites/templates.
@@ -65,7 +65,7 @@ Triggers:
 - Merge promotion PR `canary` -> `master`:
   - requires exactly one label: `release:patch`, `release:minor`, or `release:major`
   - auto-creates a semver tag `vMAJOR.MINOR.PATCH`
-  - tag triggers a published GitHub Release asset build
+  - tag triggers a published GitHub Release asset build (auto-tag workflow dispatches build due to GitHub recursion prevention)
   - production deploy triggers only from the published GitHub Release (release-only policy)
 
 Canary auto-stop:

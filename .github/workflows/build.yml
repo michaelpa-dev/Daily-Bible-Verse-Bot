@@ -9,6 +9,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -201,3 +202,29 @@ jobs:
           body_path: ${{ steps.notes.outputs.release_body_path }}
           generate_release_notes: false
           files: ${{ steps.package.outputs.asset_path }}
+
+      - name: Dispatch production deploy (release-only)
+        if: steps.meta.outputs.prerelease == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          # Release creation is immediate, but allow for API propagation before triggering a deploy.
+          for i in $(seq 1 10); do
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for release ${RELEASE_TAG} to be visible (attempt ${i}/10)..."
+            sleep 3
+          done
+
+          if ! gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} is not visible via API; refusing to dispatch prod deploy." >&2
+            exit 1
+          fi
+
+          echo "Dispatching production deploy for ${RELEASE_TAG}..."
+          gh workflow run deploy-prod.yml --repo "${GITHUB_REPOSITORY}" --ref "master" -f release_tag="${RELEASE_TAG}"
