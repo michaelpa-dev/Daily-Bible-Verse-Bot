@@ -2,6 +2,7 @@ const axios = require('axios');
 const { logger } = require('../logger.js');
 const { bibleApiUrl, translationApiUrl, defaultTranslation } = require('../config.js');
 const { normalizeTranslationCode } = require('../constants/translations.js');
+const devBotLogs = require('./devBotLogs.js');
 
 function buildReferenceRequestUrl(passage) {
   return `${bibleApiUrl}${encodeURIComponent(passage)}`;
@@ -23,7 +24,13 @@ async function getVerseReference(passage) {
   const requestUrl = buildReferenceRequestUrl(passage);
 
   logger.debug(`Fetching verse reference from API: ${requestUrl}`);
+  const startedAt = Date.now();
   const response = await axios.get(requestUrl, { timeout: 15000 });
+  devBotLogs.logEvent('info', 'http.labsBibleOrg.reference', {
+    passage,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+  });
   const verse = Array.isArray(response.data) ? response.data[0] : null;
 
   if (!verse || !verse.bookname || !verse.chapter || !verse.verse) {
@@ -37,9 +44,16 @@ async function getTranslatedVerse(reference, translation) {
   const requestUrl = buildTranslationRequestUrl(reference, translation);
 
   logger.debug(`Fetching translated verse from API: ${requestUrl}`);
+  const startedAt = Date.now();
   const response = await axios.get(requestUrl, {
     timeout: 15000,
     validateStatus: (status) => status < 500,
+  });
+  devBotLogs.logEvent('info', 'http.bibleApiCom.translate', {
+    reference,
+    translation,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
   });
 
   if (response.status !== 200 || !response.data || !Array.isArray(response.data.verses)) {

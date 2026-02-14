@@ -7,14 +7,8 @@ const { parseScriptureReference } = require('../services/scriptureReference.js')
 const { paginateLines } = require('../services/pagination.js');
 const { createPaginatedMessage } = require('../services/paginationInteractions.js');
 const { buildEmbedTitle, formatPassageLines } = require('../services/passageFormatter.js');
+const { buildScriptureFooter, buildStandardEmbed, COLORS } = require('../services/messageStyle.js');
 const { logCommandError } = require('../services/botOps.js');
-
-function buildFooter(passage) {
-  const translationName = String(passage.translationName || 'World English Bible').trim();
-  const note = String(passage.translationNote || '').trim();
-  const noteSuffix = note ? ` • ${note}` : '';
-  return `${translationName}${noteSuffix} • Source: bible-api.com`;
-}
 
 function buildEmbed(session, timestamp = new Date()) {
   // createPaginatedMessage returns an embed without a timestamp. We add it here so the
@@ -74,8 +68,8 @@ module.exports = {
         userId: interaction.user.id,
         pages,
         title,
-        color: '#0099ff',
-        footer: buildFooter(passage),
+        color: COLORS.primary,
+        footer: buildScriptureFooter(passage),
         ttlMs: 25 * 60 * 1000,
       });
 
@@ -85,12 +79,13 @@ module.exports = {
       };
 
       if (mode === 'dm') {
-        const notice = interaction.guildId
-          ? 'Check your DMs.'
-          : null;
-
-        if (notice) {
-          await interaction.reply({ content: notice, ephemeral: true });
+        if (interaction.guildId) {
+          const embed = buildStandardEmbed({
+            title: 'Check your DMs',
+            description: 'I sent you the passage with pagination controls.',
+            color: COLORS.primary,
+          });
+          await interaction.reply({ embeds: [embed], ephemeral: true });
         } else {
           await interaction.reply(payload);
         }
