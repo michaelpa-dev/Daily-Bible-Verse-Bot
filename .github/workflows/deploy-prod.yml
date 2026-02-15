@@ -224,37 +224,6 @@ jobs:
           echo "download_url=${download_url}" >> "$GITHUB_OUTPUT"
           echo "download_kind=${download_kind}" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for SSM agent (managed instance online)
-        shell: bash
-        env:
-          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
-        run: |
-          set -euo pipefail
-
-          echo "Waiting for SSM PingStatus=Online on ${INSTANCE_ID}..."
-          for attempt in $(seq 1 40); do
-            ping_status="$(aws ssm describe-instance-information \
-              --region "${AWS_REGION}" \
-              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
-              --query "InstanceInformationList[0].PingStatus" \
-              --output text 2>/dev/null || true)"
-
-            if [ "${ping_status}" = "Online" ]; then
-              echo "SSM PingStatus: Online"
-              exit 0
-            fi
-
-            echo "SSM not online yet (attempt ${attempt}/40). PingStatus=${ping_status:-unknown}. Waiting 10s..."
-            sleep 10
-          done
-
-          echo "SSM did not report Online for ${INSTANCE_ID} within timeout." >&2
-          aws ssm describe-instance-information \
-            --region "${AWS_REGION}" \
-            --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
-            --output json || true
-          exit 1
-
       - name: Deploy production via SSM RunCommand (GitHub Release artifact)
         id: ssm
         shell: bash
