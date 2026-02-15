@@ -3,7 +3,11 @@ const { SlashCommandBuilder } = require('discord.js');
 const { addCommandExecution } = require('../db/statsDB.js');
 const { getBookById } = require('../constants/books.js');
 const { logger } = require('../logger.js');
-const { buildReadMessage, buildReadResolutionMessage, createReadSession } = require('../services/readSessions.js');
+const {
+  buildReadMessage,
+  buildReadResolutionMessage,
+  createReadSession,
+} = require('../services/readSessions.js');
 const { logCommandError } = require('../services/botOps.js');
 const { buildStandardEmbed, COLORS } = require('../services/messageStyle.js');
 
@@ -77,4 +81,3 @@ module.exports = {
     }
   },
 };
-

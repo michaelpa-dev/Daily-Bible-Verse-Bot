@@ -5,9 +5,7 @@ function memberHasRoleByName(member, roleName) {
     return false;
   }
 
-  return member.roles.cache.some(
-    (role) => role.name.toLowerCase() === roleName.toLowerCase()
-  );
+  return member.roles.cache.some((role) => role.name.toLowerCase() === roleName.toLowerCase());
 }
 
 function isOwnerOrMaintainer(interaction) {

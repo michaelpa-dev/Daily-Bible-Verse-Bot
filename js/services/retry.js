@@ -22,8 +22,7 @@ function computeBackoffDelayMs(attempt, options) {
 
 async function retryAsync(fn, options = {}) {
   const maxAttempts = parsePositiveInt(options.maxAttempts, 3);
-  const shouldRetry =
-    typeof options.shouldRetry === 'function' ? options.shouldRetry : () => true;
+  const shouldRetry = typeof options.shouldRetry === 'function' ? options.shouldRetry : () => true;
   const onRetry = typeof options.onRetry === 'function' ? options.onRetry : null;
   const computeDelayMs =
     typeof options.computeDelayMs === 'function' ? options.computeDelayMs : null;

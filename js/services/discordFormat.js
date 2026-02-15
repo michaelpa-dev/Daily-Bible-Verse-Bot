@@ -19,4 +19,3 @@ function formatDiscordTimestamp(iso, options = {}) {
 module.exports = {
   formatDiscordTimestamp,
 };
-

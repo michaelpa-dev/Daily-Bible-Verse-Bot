@@ -1,8 +1,4 @@
-const {
-  ChannelType,
-  PermissionFlagsBits,
-  PermissionsBitField,
-} = require('discord.js');
+const { ChannelType, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
 const {
   CATEGORY_SPECS,
   CHANNEL_NAMES,
@@ -30,9 +26,7 @@ function roleNameEquals(a, b) {
 }
 
 function findRoleByName(guild, roleName) {
-  return (
-    guild.roles.cache.find((role) => roleNameEquals(role.name, roleName)) || null
-  );
+  return guild.roles.cache.find((role) => roleNameEquals(role.name, roleName)) || null;
 }
 
 async function ensureRole(guild, roleSpec, applyChanges, report) {
@@ -69,14 +63,13 @@ async function ensureRole(guild, roleSpec, applyChanges, report) {
         String(permission)
     )
     .join(', ');
-  addReportItem(
-    report,
-    'updated',
-    `Role ${roleSpec.name}: add permissions (${permissionNames})`
-  );
+  addReportItem(report, 'updated', `Role ${roleSpec.name}: add permissions (${permissionNames})`);
 
   if (applyChanges) {
-    await role.setPermissions(rolePermissions.add(missingPermissions), 'Bootstrap role permissions');
+    await role.setPermissions(
+      rolePermissions.add(missingPermissions),
+      'Bootstrap role permissions'
+    );
   }
 
   return role;
@@ -86,8 +79,7 @@ function findCategoryByName(guild, categoryName) {
   return (
     guild.channels.cache.find(
       (channel) =>
-        channel.type === ChannelType.GuildCategory &&
-        roleNameEquals(channel.name, categoryName)
+        channel.type === ChannelType.GuildCategory && roleNameEquals(channel.name, categoryName)
     ) || null
   );
 }
@@ -95,9 +87,7 @@ function findCategoryByName(guild, categoryName) {
 function findChannelByName(guild, channelName, channelType) {
   return (
     guild.channels.cache.find(
-      (channel) =>
-        channel.type === channelType &&
-        roleNameEquals(channel.name, channelName)
+      (channel) => channel.type === channelType && roleNameEquals(channel.name, channelName)
     ) || null
   );
 }
@@ -122,8 +112,7 @@ async function ensureCategory(guild, categorySpec, applyChanges, report) {
 }
 
 async function ensureChannel(guild, category, channelSpec, applyChanges, report) {
-  const channelType =
-    channelSpec.type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText;
+  const channelType = channelSpec.type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText;
   let channel = findChannelByName(guild, channelSpec.name, channelType);
 
   if (!channel) {
@@ -146,11 +135,7 @@ async function ensureChannel(guild, category, channelSpec, applyChanges, report)
   }
 
   if (category && channel.parentId !== category.id) {
-    addReportItem(
-      report,
-      'updated',
-      `Channel #${channel.name}: move to category ${category.name}`
-    );
+    addReportItem(report, 'updated', `Channel #${channel.name}: move to category ${category.name}`);
     if (applyChanges) {
       await channel.setParent(category.id, { lockPermissions: false });
     }
@@ -195,14 +180,7 @@ function overwriteSatisfies(overwrite, permissions) {
   return true;
 }
 
-async function ensureOverwrite(
-  channel,
-  overwriteTarget,
-  permissions,
-  label,
-  applyChanges,
-  report
-) {
+async function ensureOverwrite(channel, overwriteTarget, permissions, label, applyChanges, report) {
   if (!channel || !overwriteTarget) {
     return;
   }
@@ -237,8 +215,7 @@ async function ensurePinnedTemplate(channel, template, applyChanges, report) {
   let templateMessage =
     pinnedMessages.find(
       (message) =>
-        message.author.id === channel.client.user.id &&
-        message.content.includes(template.marker)
+        message.author.id === channel.client.user.id && message.content.includes(template.marker)
     ) || null;
 
   if (!templateMessage) {
@@ -246,8 +223,7 @@ async function ensurePinnedTemplate(channel, template, applyChanges, report) {
     templateMessage =
       recentMessages.find(
         (message) =>
-          message.author.id === channel.client.user.id &&
-          message.content.includes(template.marker)
+          message.author.id === channel.client.user.id && message.content.includes(template.marker)
       ) || null;
   }
 
@@ -294,13 +270,7 @@ async function bootstrapDevServer(guild, options = {}) {
     const category = await ensureCategory(guild, categorySpec, applyChanges, report);
 
     for (const channelSpec of categorySpec.channels) {
-      const channel = await ensureChannel(
-        guild,
-        category,
-        channelSpec,
-        applyChanges,
-        report
-      );
+      const channel = await ensureChannel(guild, category, channelSpec, applyChanges, report);
       if (channel) {
         channelsByName.set(channelSpec.name.toLowerCase(), channel);
       }

@@ -12,7 +12,9 @@ function normalizeReferenceInput(input) {
 }
 
 function parseVerseSpec(rawSpec) {
-  const cleaned = String(rawSpec || '').trim().replace(/\s+/g, '');
+  const cleaned = String(rawSpec || '')
+    .trim()
+    .replace(/\s+/g, '');
   if (!cleaned) {
     return null;
   }
@@ -43,9 +45,7 @@ function parseVerseSpec(rawSpec) {
 
     const match = part.match(/^(\d+)-(\d+)$/);
     if (!match) {
-      throw new Error(
-        `Invalid verse range: "${part}". Use formats like 16, 16-18, or 31-33,46.`
-      );
+      throw new Error(`Invalid verse range: "${part}". Use formats like 16, 16-18, or 31-33,46.`);
     }
 
     const start = Number(match[1]);
@@ -68,7 +68,9 @@ function parseVerseSpec(rawSpec) {
 
   // Keep a canonical spec for display (no spaces).
   const verseSpec = ranges
-    .map((range) => (range.start === range.end ? String(range.start) : `${range.start}-${range.end}`))
+    .map((range) =>
+      range.start === range.end ? String(range.start) : `${range.start}-${range.end}`
+    )
     .join(',');
 
   return {
@@ -91,10 +93,24 @@ function parseScriptureReferenceParts(input) {
   // Capture the trailing chapter and optional verse spec.
   const match = normalized.match(/(\d+)(?::([\d,\-\s]+))?\s*$/);
   if (!match || typeof match.index !== 'number') {
+    // If the user only provided a book name ("1 samuel", "john"), assume chapter 1.
+    // If there is a colon, the input is likely malformed (ex: "john 3:"), so we
+    // still return a helpful parse error instead of guessing.
+    if (normalized.includes(':')) {
+      return {
+        kind: 'error',
+        normalizedInput: normalized,
+        message: `Unable to parse reference "${normalized}". Try formats like "John 3:16", "Ps 23", or "Matt 25:31-33,46".`,
+      };
+    }
+
     return {
-      kind: 'error',
+      kind: 'parts',
       normalizedInput: normalized,
-      message: `Unable to parse reference "${normalized}". Try formats like "John 3:16", "Ps 23", or "Matt 25:31-33,46".`,
+      bookPart: normalized,
+      chapter: 1,
+      verseSpecRaw: null,
+      assumedChapter: true,
     };
   }
 
@@ -260,4 +276,3 @@ module.exports = {
   parseScriptureReferenceParts,
   parseVerseSpec,
 };
-

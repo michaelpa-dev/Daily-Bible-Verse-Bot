@@ -20,7 +20,9 @@ function formatPassageLines(passage) {
 
 function buildEmbedTitle(reference, translationId) {
   const ref = String(reference || '').trim();
-  const translation = String(translationId || '').trim().toUpperCase();
+  const translation = String(translationId || '')
+    .trim()
+    .toUpperCase();
   if (!ref) {
     return translation ? `Passage (${translation})` : 'Passage';
   }
@@ -31,4 +33,3 @@ module.exports = {
   buildEmbedTitle,
   formatPassageLines,
 };
-

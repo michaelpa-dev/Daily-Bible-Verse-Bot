@@ -115,7 +115,7 @@ async function postPlanTick(client, planId, options = {}) {
       if (task) {
         try {
           task.stop();
-        } catch (error) {
+        } catch (_error) {
           // ignore
         }
         tasks.delete(plan.id);
@@ -131,14 +131,21 @@ async function postPlanTick(client, planId, options = {}) {
     if (plan.ownerType === 'guild') {
       if (!plan.channelId) {
         logger.warn(`Guild plan ${plan.id} has no channelId; skipping post.`);
-        devBotLogs.logEvent('warn', 'plan.tick.skip', { planId: plan.id, reason: 'missing_channelId' });
+        devBotLogs.logEvent('warn', 'plan.tick.skip', {
+          planId: plan.id,
+          reason: 'missing_channelId',
+        });
         return;
       }
 
       const channel = await client.channels.fetch(plan.channelId).catch(() => null);
       if (!channel || typeof channel.send !== 'function') {
         logger.warn(`Unable to fetch channel ${plan.channelId} for plan ${plan.id}`);
-        devBotLogs.logEvent('warn', 'plan.tick.skip', { planId: plan.id, reason: 'channel_fetch_failed', channelId: plan.channelId });
+        devBotLogs.logEvent('warn', 'plan.tick.skip', {
+          planId: plan.id,
+          reason: 'channel_fetch_failed',
+          channelId: plan.channelId,
+        });
         return;
       }
 
@@ -171,7 +178,7 @@ function stopAllTasks() {
   for (const task of tasks.values()) {
     try {
       task.stop();
-    } catch (error) {
+    } catch {
       // ignore
     }
   }

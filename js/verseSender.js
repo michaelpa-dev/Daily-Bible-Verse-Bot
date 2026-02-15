@@ -5,8 +5,7 @@ const { getTranslationLabel } = require('./constants/translations.js');
 const { buildStandardEmbed, COLORS } = require('./services/messageStyle.js');
 
 async function sendDailyVerse(client, userOrId, passage, options = {}) {
-  const resolvedUserId =
-    typeof userOrId === 'string' ? userOrId : userOrId?.id;
+  const resolvedUserId = typeof userOrId === 'string' ? userOrId : userOrId?.id;
 
   if (!resolvedUserId) {
     logger.warn('Cannot send verse because no user ID was provided.');
@@ -15,7 +14,13 @@ async function sendDailyVerse(client, userOrId, passage, options = {}) {
 
   logger.debug(`Sending ${passage} verse to user: ${resolvedUserId}`);
 
-  const user = await client.users.fetch(resolvedUserId);
+  let user = null;
+  try {
+    user = await client.users.fetch(resolvedUserId);
+  } catch (error) {
+    logger.warn(`Failed to resolve user ${resolvedUserId} for verse delivery`, error);
+    return false;
+  }
   if (!user) {
     return false;
   }
@@ -29,8 +34,7 @@ async function sendDailyVerse(client, userOrId, passage, options = {}) {
 
   const verseText = randomVerse.text;
   const verseReference =
-    randomVerse.reference ||
-    `${randomVerse.bookname} ${randomVerse.chapter}:${randomVerse.verse}`;
+    randomVerse.reference || `${randomVerse.bookname} ${randomVerse.chapter}:${randomVerse.verse}`;
   const translationLabel = randomVerse.translationName || getTranslationLabel(translation);
   logger.debug(
     `Sending verse to ${user.username} (${user.id}) ${verseReference} [${translationLabel}]`

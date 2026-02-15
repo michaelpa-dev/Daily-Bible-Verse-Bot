@@ -80,4 +80,3 @@ test('planScheduler postPlanTick marks plan stopped when readings complete', asy
     await cleanupSandbox(sandbox, database);
   }
 });
-

@@ -88,4 +88,3 @@ test('devBotLogs opens a circuit breaker after repeated send failures', async ()
   assert.ok(health.consecutiveFailures >= 3);
   assert.ok(health.circuitOpenUntil, 'expected circuitOpenUntil to be set');
 });
-

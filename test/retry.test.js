@@ -66,4 +66,3 @@ test('retryAsync stops immediately when shouldRetry returns false', async () => 
 
   assert.equal(calls, 1);
 });
-

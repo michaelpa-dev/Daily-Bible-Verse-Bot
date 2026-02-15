@@ -1,6 +1,9 @@
 services:
   bot:
     container_name: daily-bible-verse-bot
+    # Tag images by release so we can build the next version before stopping the current container
+    # and roll back quickly if needed.
+    image: daily-bible-verse-bot:${RELEASE_TAG:-dev}
     build:
       context: .
       dockerfile: Dockerfile

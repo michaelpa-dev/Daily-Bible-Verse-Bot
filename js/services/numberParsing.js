@@ -14,4 +14,3 @@ function parsePositiveInt(value, defaultValue) {
 module.exports = {
   parsePositiveInt,
 };
-

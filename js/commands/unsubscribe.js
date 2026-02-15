@@ -45,8 +45,7 @@ module.exports = {
     } catch (error) {
       logger.error(error);
       await logCommandError(interaction, error, 'Unsubscribe command failed');
-      const message =
-        'An error occurred while processing your unsubscription request.';
+      const message = 'An error occurred while processing your unsubscription request.';
       if (interaction.replied || interaction.deferred) {
         await interaction.followUp({ content: message, ephemeral: true });
       } else {

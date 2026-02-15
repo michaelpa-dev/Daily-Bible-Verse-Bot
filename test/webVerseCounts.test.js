@@ -37,4 +37,3 @@ test('pickRandomVerseFromBook maps offsets deterministically', () => {
   const verse = pickRandomVerseFromBook('JHN', { offset: 0 });
   assert.deepEqual(verse, { bookId: 'JHN', chapter: 1, verse: 1 });
 });
-

@@ -45,7 +45,9 @@ function clamp01(value) {
 }
 
 function normalizeOrdinalToken(token) {
-  const raw = String(token || '').trim().toLowerCase();
+  const raw = String(token || '')
+    .trim()
+    .toLowerCase();
   if (!raw) {
     return '';
   }
@@ -54,7 +56,9 @@ function normalizeOrdinalToken(token) {
 }
 
 function normalizeBookQuery(input) {
-  let value = String(input || '').trim().toLowerCase();
+  let value = String(input || '')
+    .trim()
+    .toLowerCase();
   if (!value) {
     return '';
   }
@@ -72,11 +76,7 @@ function normalizeBookQuery(input) {
     return '';
   }
 
-  const tokens = value
-    .split(' ')
-    .filter(Boolean)
-    .map(normalizeOrdinalToken)
-    .filter(Boolean);
+  const tokens = value.split(' ').filter(Boolean).map(normalizeOrdinalToken).filter(Boolean);
 
   return tokens.join(' ');
 }
@@ -97,7 +97,9 @@ function parseLeadingOrdinal(tokens) {
 }
 
 function getBookOrdinal(book) {
-  const match = String(book?.name || '').trim().match(/^([123])\s+/);
+  const match = String(book?.name || '')
+    .trim()
+    .match(/^([123])\s+/);
   if (!match) {
     return null;
   }

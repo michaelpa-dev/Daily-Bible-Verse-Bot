@@ -1,5 +1,5 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Description: "Daily Bible Verse Bot (SSM deploy foundation: instance roles, GitHub OIDC role, canary auto-stop)"
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Daily Bible Verse Bot (SSM deploy foundation: instance roles, GitHub OIDC role, canary auto-stop)'
 
 Parameters:
   GitHubOidcProviderArn:
@@ -32,7 +32,7 @@ Resources:
     Properties:
       RoleName: DailyBibleVerseBotProductionInstanceRole
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -43,7 +43,7 @@ Resources:
       Policies:
         - PolicyName: ReadProductionBotToken
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
@@ -53,7 +53,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - kms:Decrypt
-                Resource: "*"
+                Resource: '*'
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
@@ -70,7 +70,7 @@ Resources:
     Properties:
       RoleName: DailyBibleVerseBotCanaryInstanceRole
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -81,7 +81,7 @@ Resources:
       Policies:
         - PolicyName: ReadCanaryBotToken
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
@@ -91,7 +91,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - kms:Decrypt
-                Resource: "*"
+                Resource: '*'
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
@@ -108,7 +108,7 @@ Resources:
     Properties:
       RoleName: DailyBibleVerseBotGitHubActionsRole
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -126,7 +126,7 @@ Resources:
       Policies:
         - PolicyName: DeployViaSsm
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
@@ -135,7 +135,7 @@ Resources:
                   - ec2:DescribeTags
                   - ec2:DescribeVolumes
                   - ec2:DescribeAddresses
-                Resource: "*"
+                Resource: '*'
               - Effect: Allow
                 Action:
                   - ec2:StartInstances
@@ -147,10 +147,28 @@ Resources:
                     ec2:ResourceTag/App: !Ref AppTagValue
               - Effect: Allow
                 Action:
+                  # Break-glass only: temporarily open/close SSH ingress so we can repair SSM when it's offline.
+                  # This is used by a GitHub Actions workflow and should not be needed during normal operations.
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/App: !Ref AppTagValue
+              - Effect: Allow
+                Action:
+                  # Break-glass only: inject an ephemeral SSH key for short-lived access.
+                  - ec2-instance-connect:SendSSHPublicKey
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/App: !Ref AppTagValue
+              - Effect: Allow
+                Action:
                   - ssm:SendCommand
                   - ssm:GetCommandInvocation
                   - ssm:ListCommandInvocations
-                Resource: "*"
+                Resource: '*'
               - Effect: Allow
                 Action:
                   - ssm:PutParameter
@@ -161,7 +179,7 @@ Resources:
                 Action:
                   - kms:Encrypt
                   - kms:Decrypt
-                Resource: "*"
+                Resource: '*'
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
@@ -171,7 +189,7 @@ Resources:
     Properties:
       RoleName: DailyBibleVerseBotCanaryAutoStopRole
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -182,12 +200,12 @@ Resources:
       Policies:
         - PolicyName: StopCanaryInstances
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
                   - ec2:DescribeInstances
-                Resource: "*"
+                Resource: '*'
               - Effect: Allow
                 Action:
                   - ec2:StopInstances
@@ -210,7 +228,7 @@ Resources:
           APP_TAG_VALUE: !Ref AppTagValue
           ENVIRONMENT_TAG_VALUE: canary
           LAST_PUSH_TAG_KEY: CanaryLastPushEpoch
-          MAX_AGE_SECONDS: "14400"
+          MAX_AGE_SECONDS: '14400'
       Code:
         ZipFile: |
           import os

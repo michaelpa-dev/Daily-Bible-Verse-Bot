@@ -67,4 +67,3 @@ test('/read paging uses smaller pages and never splits verse lines', async () =>
     assert.equal(hits, 1, `expected verse line to appear once: ${line.slice(0, 30)}...`);
   }
 });
-

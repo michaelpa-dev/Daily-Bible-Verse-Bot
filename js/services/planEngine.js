@@ -1,13 +1,7 @@
 const { BOOKS, getBookById } = require('../constants/books.js');
 const { getBookChapterCount } = require('../constants/webVerseCounts.js');
 
-const PLAN_TYPES = [
-  'one-year',
-  'gospels-30',
-  'psalms-proverbs',
-  'new-testament-90',
-  'custom',
-];
+const PLAN_TYPES = ['one-year', 'gospels-30', 'psalms-proverbs', 'new-testament-90', 'custom'];
 
 function listBookIdsByTestament(testament) {
   const normalized = String(testament || '').toUpperCase();
@@ -183,4 +177,3 @@ module.exports = {
   getReadingForDay,
   normalizePace,
 };
-

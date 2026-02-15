@@ -178,12 +178,9 @@ async function getTranslatedVerse(reference, translation) {
 }
 
 async function getRandomBibleVerse(passage, options = {}) {
-  const normalizedPassage = typeof passage === 'string' && passage.trim().length > 0
-    ? passage.trim()
-    : 'random';
-  const normalizedTranslation = normalizeTranslationCode(
-    options.translation || defaultTranslation
-  );
+  const normalizedPassage =
+    typeof passage === 'string' && passage.trim().length > 0 ? passage.trim() : 'random';
+  const normalizedTranslation = normalizeTranslationCode(options.translation || defaultTranslation);
 
   try {
     const verseReferenceData = await getVerseReference(normalizedPassage);
@@ -192,10 +189,7 @@ async function getRandomBibleVerse(passage, options = {}) {
     }
 
     const verseReference = buildReferenceFromVerse(verseReferenceData);
-    const translatedVerse = await getTranslatedVerse(
-      verseReference,
-      normalizedTranslation
-    );
+    const translatedVerse = await getTranslatedVerse(verseReference, normalizedTranslation);
 
     if (translatedVerse) {
       logger.info(

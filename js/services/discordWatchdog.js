@@ -1,10 +1,7 @@
 const { WebSocketShardStatus } = require('discord.js');
 
 const { logger } = require('../logger.js');
-const {
-  markWatchdogExit,
-  markWatchdogOk,
-} = require('./runtimeHealth.js');
+const { markWatchdogExit, markWatchdogOk } = require('./runtimeHealth.js');
 const { parsePositiveInt } = require('./numberParsing.js');
 
 const DEFAULT_INTERVAL_MS = 30_000;
@@ -156,4 +153,3 @@ module.exports = {
     resolveStatusName,
   },
 };
-

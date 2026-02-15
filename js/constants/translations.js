@@ -21,9 +21,7 @@ function normalizeTranslationCode(rawCode) {
   }
 
   const normalizedCode = rawCode.trim().toLowerCase();
-  return supportedTranslationSet.has(normalizedCode)
-    ? normalizedCode
-    : DEFAULT_TRANSLATION;
+  return supportedTranslationSet.has(normalizedCode) ? normalizedCode : DEFAULT_TRANSLATION;
 }
 
 function isSupportedTranslation(rawCode) {
@@ -36,9 +34,7 @@ function isSupportedTranslation(rawCode) {
 
 function getTranslationLabel(code) {
   const normalizedCode = normalizeTranslationCode(code);
-  const match = SUPPORTED_TRANSLATIONS.find(
-    (translation) => translation.value === normalizedCode
-  );
+  const match = SUPPORTED_TRANSLATIONS.find((translation) => translation.value === normalizedCode);
   return match ? match.label : 'World English Bible';
 }
 

@@ -1,11 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { logger } = require('../logger.js');
 const sendDailyVerse = require('../verseSender');
-const {
-  addSubscribedUser,
-  isSubscribed,
-  setUserTranslation,
-} = require('../db/subscribeDB.js');
+const { addSubscribedUser, isSubscribed, setUserTranslation } = require('../db/subscribeDB.js');
 const { addCommandExecution, updateSubscribedUsersCount } = require('../db/statsDB.js');
 const {
   DEFAULT_TRANSLATION,
@@ -22,9 +18,7 @@ module.exports = {
     .setName('subscribe')
     .setDescription('Subscribe to daily Bible verses')
     .addStringOption((option) => {
-      option
-        .setName('translation')
-        .setDescription('Set your preferred Bible translation');
+      option.setName('translation').setDescription('Set your preferred Bible translation');
       for (const choice of translationChoices) {
         option.addChoices(choice);
       }
@@ -36,9 +30,7 @@ module.exports = {
 
     const userID = interaction.user.id;
     const translationInput = interaction.options.getString('translation');
-    const selectedTranslation = normalizeTranslationCode(
-      translationInput || DEFAULT_TRANSLATION
-    );
+    const selectedTranslation = normalizeTranslationCode(translationInput || DEFAULT_TRANSLATION);
     const selectedTranslationLabel = getTranslationLabel(selectedTranslation);
 
     try {
@@ -86,8 +78,7 @@ module.exports = {
     } catch (error) {
       logger.error(error);
       await logCommandError(interaction, error, 'Subscribe command failed');
-      const message =
-        'An error occurred while processing your subscription request.';
+      const message = 'An error occurred while processing your subscription request.';
 
       if (interaction.replied || interaction.deferred) {
         await interaction.followUp({ content: message, ephemeral: true });

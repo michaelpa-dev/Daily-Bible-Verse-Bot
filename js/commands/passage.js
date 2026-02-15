@@ -32,10 +32,7 @@ module.exports = {
       option
         .setName('mode')
         .setDescription('Where to send the passage')
-        .addChoices(
-          { name: 'Channel', value: 'channel' },
-          { name: 'DM', value: 'dm' }
-        )
+        .addChoices({ name: 'Channel', value: 'channel' }, { name: 'DM', value: 'dm' })
         .setRequired(false)
     ),
 
@@ -124,4 +121,3 @@ module.exports = {
     }
   },
 };
-
