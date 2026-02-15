@@ -25,7 +25,7 @@ The deploy approach is now:
 
 - Artifact: GitHub Release asset (`tar.gz`) produced by `build.yml`.
 - Deploy: AWS SSM RunCommand (`AWS-RunShellScript`), no SSH required.
-- Private-safe artifact download: Deploy workflows resolve a short-lived signed download URL via GitHub API on the runner (auth via `GITHUB_TOKEN` or optional `GH_RELEASE_TOKEN`), and pass only that signed URL to EC2 (no GitHub token on EC2).
+- Private-safe artifact download: Deploy workflows wait for SSM PingStatus=Online, then resolve a short-lived signed download URL via GitHub API on the runner (auth via `GITHUB_TOKEN` or optional `GH_RELEASE_TOKEN`), and pass only that signed URL to EC2 (no GitHub token on EC2).
 - Canary: auto-start on pushes to `canary`, auto-stop after 4 hours since the last push.
 - Production: release-only deploys (published GitHub Release tag + asset).
 - Release automation: `auto-tag-release.yml` computes the next semver tag after a merge to `master` and dispatches the build workflow for that tag. This is required because GitHub prevents tag pushes created by `GITHUB_TOKEN` from triggering downstream workflows.
