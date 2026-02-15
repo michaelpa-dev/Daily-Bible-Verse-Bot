@@ -105,37 +105,6 @@ jobs:
           aws ec2 wait instance-running --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
           aws ec2 wait instance-status-ok --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
 
-      - name: Wait for SSM agent (managed instance online)
-        shell: bash
-        env:
-          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
-        run: |
-          set -euo pipefail
-
-          echo "Waiting for SSM PingStatus=Online on ${INSTANCE_ID}..."
-          for attempt in $(seq 1 40); do
-            ping_status="$(aws ssm describe-instance-information \
-              --region "${AWS_REGION}" \
-              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
-              --query "InstanceInformationList[0].PingStatus" \
-              --output text 2>/dev/null || true)"
-
-            if [ "${ping_status}" = "Online" ]; then
-              echo "SSM PingStatus: Online"
-              exit 0
-            fi
-
-            echo "SSM not online yet (attempt ${attempt}/40). PingStatus=${ping_status:-unknown}. Waiting 10s..."
-            sleep 10
-          done
-
-          echo "SSM did not report Online for ${INSTANCE_ID} within timeout." >&2
-          aws ssm describe-instance-information \
-            --region "${AWS_REGION}" \
-            --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
-            --output json || true
-          exit 1
-
       - name: Sync BOT_TOKEN to SSM Parameter Store (SecureString)
         shell: bash
         env:
