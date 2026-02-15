@@ -1,9 +1,12 @@
 const cron = require('node-cron');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const { logger } = require('../logger.js');
 const { listActivePlans, getPlanById, bumpDayIndex, setPlanStatus } = require('../db/planDB.js');
 const { getReadingForDay, buildReferenceLabel } = require('./planEngine.js');
+const devBotLogs = require('./devBotLogs.js');
+const { generateCorrelationId, runWithCorrelationId } = require('./correlation.js');
+const { buildStandardEmbed, COLORS } = require('./messageStyle.js');
 
 const tasks = new Map();
 
@@ -52,17 +55,15 @@ function formatLocalTimeParts(timezone, date = new Date()) {
 
 function buildGuildPlanSummaryEmbed(plan, localDate, refs) {
   const title = `Reading Plan: ${plan.planType}`;
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setColor('#0099ff')
-    .setTimestamp(new Date())
-    .setDescription(
+  const embed = buildStandardEmbed({
+    title,
+    color: COLORS.primary,
+    description:
       `**Today's reading (${localDate})**\n` +
-        refs.map((ref) => `- ${buildReferenceLabel(ref)}`).join('\n')
-    )
-    .setFooter({
-      text: 'Use the button below to DM yourself today’s reading (with pagination).',
-    });
+      refs.map((ref) => `- ${buildReferenceLabel(ref)}`).join('\n'),
+    footerText: 'Use the button below to DM yourself today’s reading (with pagination).',
+    timestamp: new Date(),
+  });
 
   return embed;
 }
@@ -79,65 +80,91 @@ function buildGuildPlanComponents(planId, dayIndex, localDate) {
 }
 
 async function postPlanTick(client, planId, options = {}) {
-  const plan = await getPlanById(planId);
-  if (!plan || plan.status !== 'active') {
-    return;
-  }
+  const correlationId = generateCorrelationId();
 
-  const localDate = formatLocalDate(plan.timezone);
-  if (plan.startDate && localDate < plan.startDate) {
-    // Respect future-dated plans: don't post until the plan's start date in its timezone.
-    return;
-  }
-  if (plan.lastPostedOn === localDate) {
-    return;
-  }
-
-  const refs = getReadingForDay(plan, plan.dayIndex);
-  if (refs.length === 0) {
-    logger.info(`Plan ${plan.id} has no more readings. Marking stopped.`);
-    await setPlanStatus(plan.id, 'stopped');
-    const task = tasks.get(plan.id);
-    if (task) {
-      try {
-        task.stop();
-      } catch {
-        // ignore
-      }
-      tasks.delete(plan.id);
-    }
-    return;
-  }
-
-  if (plan.ownerType === 'guild') {
-    if (!plan.channelId) {
-      logger.warn(`Guild plan ${plan.id} has no channelId; skipping post.`);
+  await runWithCorrelationId(correlationId, async () => {
+    const plan = await getPlanById(planId);
+    if (!plan || plan.status !== 'active') {
       return;
     }
 
-    const channel = await client.channels.fetch(plan.channelId).catch(() => null);
-    if (!channel || typeof channel.send !== 'function') {
-      logger.warn(`Unable to fetch channel ${plan.channelId} for plan ${plan.id}`);
+    const localDate = formatLocalDate(plan.timezone);
+    if (plan.startDate && localDate < plan.startDate) {
+      // Respect future-dated plans: don't post until the plan's start date in its timezone.
+      return;
+    }
+    if (plan.lastPostedOn === localDate) {
       return;
     }
 
-    const embed = buildGuildPlanSummaryEmbed(plan, localDate, refs);
-    const components = buildGuildPlanComponents(plan.id, plan.dayIndex, localDate);
-
-    const lateSuffix = options.late ? ' (late)' : '';
-    embed.setTitle(`Reading Plan: ${plan.planType}${lateSuffix}`);
-    await channel.send({ embeds: [embed], components });
-  } else {
-    // User plan: DM the full reading (with pagination).
-    const { sendUserPlanReading } = require('./planInteractions.js');
-    await sendUserPlanReading(client, plan, plan.dayIndex, localDate, {
-      targetUserId: plan.ownerId,
-      includeCompletion: true,
+    const tickStartedAt = Date.now();
+    devBotLogs.logEvent('info', 'plan.tick.start', {
+      planId: plan.id,
+      ownerType: plan.ownerType,
+      ownerId: plan.ownerId,
+      dayIndex: plan.dayIndex,
+      localDate,
       late: options.late === true,
     });
-  }
 
-  await bumpDayIndex(plan.id, localDate);
+    const refs = getReadingForDay(plan, plan.dayIndex);
+    if (refs.length === 0) {
+      logger.info(`Plan ${plan.id} has no more readings. Marking stopped.`);
+      await setPlanStatus(plan.id, 'stopped');
+      const task = tasks.get(plan.id);
+      if (task) {
+        try {
+          task.stop();
+        } catch (error) {
+          // ignore
+        }
+        tasks.delete(plan.id);
+      }
+      devBotLogs.logEvent('info', 'plan.tick.stop', {
+        planId: plan.id,
+        localDate,
+        durationMs: Date.now() - tickStartedAt,
+      });
+      return;
+    }
+
+    if (plan.ownerType === 'guild') {
+      if (!plan.channelId) {
+        logger.warn(`Guild plan ${plan.id} has no channelId; skipping post.`);
+        devBotLogs.logEvent('warn', 'plan.tick.skip', { planId: plan.id, reason: 'missing_channelId' });
+        return;
+      }
+
+      const channel = await client.channels.fetch(plan.channelId).catch(() => null);
+      if (!channel || typeof channel.send !== 'function') {
+        logger.warn(`Unable to fetch channel ${plan.channelId} for plan ${plan.id}`);
+        devBotLogs.logEvent('warn', 'plan.tick.skip', { planId: plan.id, reason: 'channel_fetch_failed', channelId: plan.channelId });
+        return;
+      }
+
+      const embed = buildGuildPlanSummaryEmbed(plan, localDate, refs);
+      const components = buildGuildPlanComponents(plan.id, plan.dayIndex, localDate);
+
+      const lateSuffix = options.late ? ' (late)' : '';
+      embed.setTitle(`Reading Plan: ${plan.planType}${lateSuffix}`);
+      await channel.send({ embeds: [embed], components });
+    } else {
+      // User plan: DM the full reading (with pagination).
+      const { sendUserPlanReading } = require('./planInteractions.js');
+      await sendUserPlanReading(client, plan, plan.dayIndex, localDate, {
+        targetUserId: plan.ownerId,
+        includeCompletion: true,
+        late: options.late === true,
+      });
+    }
+
+    await bumpDayIndex(plan.id, localDate);
+    devBotLogs.logEvent('info', 'plan.tick.end', {
+      planId: plan.id,
+      localDate,
+      durationMs: Date.now() - tickStartedAt,
+    });
+  });
 }
 
 function stopAllTasks() {
@@ -167,6 +194,7 @@ async function refreshPlanSchedules(client) {
             await postPlanTick(client, plan.id);
           } catch (error) {
             logger.error(`Plan tick failed for plan ${plan.id}`, error);
+            devBotLogs.logError('plan.tick.error', error, { planId: plan.id });
           }
         },
         {

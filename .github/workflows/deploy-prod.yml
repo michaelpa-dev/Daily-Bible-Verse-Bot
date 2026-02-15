@@ -381,6 +381,11 @@ jobs:
             esac
           done
 
+          if [ "${status}" = "Pending" ] || [ "${status}" = "InProgress" ] || [ "${status}" = "Delayed" ]; then
+            echo "SSM command did not complete within timeout; last status: ${status}" >&2
+            exit 1
+          fi
+
           stdout="$(aws ssm get-command-invocation \
             --region "${AWS_REGION}" \
             --command-id "${COMMAND_ID}" \

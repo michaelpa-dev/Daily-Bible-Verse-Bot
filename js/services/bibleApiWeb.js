@@ -1,11 +1,15 @@
 const { translationApiUrl } = require('../config.js');
 const { getBookById } = require('../constants/books.js');
 const { logger } = require('../logger.js');
+const devBotLogs = require('./devBotLogs.js');
+const { isRetryableStatus, parseRetryAfterMs } = require('./httpRetryUtils.js');
+const { computeBackoffDelayMs, retryAsync } = require('./retry.js');
 
 const DEFAULT_TRANSLATION = 'web';
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MAX_CACHE_ENTRIES = 250;
+const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
 
 const passageCache = new Map();
 
@@ -78,6 +82,73 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
+async function fetchWithRetry(url, options = {}) {
+  const maxAttempts = Number(options.retryMaxAttempts || DEFAULT_RETRY_MAX_ATTEMPTS);
+
+  return retryAsync(
+    async () => {
+      try {
+        const response = await fetchWithTimeout(url, options);
+        if (response.ok) {
+          return response;
+        }
+
+        if (!isRetryableStatus(response.status)) {
+          return response;
+        }
+
+        const retryableError = new Error(`Retryable HTTP ${response.status}`);
+        retryableError.httpStatus = response.status;
+        retryableError.retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+        throw retryableError;
+      } catch (error) {
+        // Fetch throws on network errors and AbortError (timeout). Treat those as transient.
+        error.retryAfterMs = Number(error.retryAfterMs || 0);
+        throw error;
+      }
+    },
+    {
+      maxAttempts: Number.isFinite(maxAttempts) && maxAttempts > 0 ? Math.floor(maxAttempts) : 1,
+      baseDelayMs: 350,
+      maxDelayMs: 8000,
+      factor: 2,
+      jitter: true,
+      shouldRetry: (error) => {
+        if (error && Number.isFinite(error.httpStatus)) {
+          return isRetryableStatus(error.httpStatus);
+        }
+
+        // Timeouts and transient network errors typically surface as AbortError / TypeError.
+        const name = String(error?.name || '');
+        if (name === 'AbortError') {
+          return true;
+        }
+        if (error instanceof TypeError) {
+          return true;
+        }
+
+        return false;
+      },
+      computeDelayMs: ({ attempt, error }) => {
+        const backoff = computeBackoffDelayMs(attempt, {
+          baseDelayMs: 350,
+          maxDelayMs: 8000,
+          factor: 2,
+          jitter: true,
+        });
+        const retryAfterMs = Number(error?.retryAfterMs || 0);
+        return Math.max(backoff, retryAfterMs);
+      },
+      onRetry: ({ attempt, maxAttempts, delayMs, error }) => {
+        const statusPart = Number.isFinite(error?.httpStatus) ? ` status=${error.httpStatus}` : '';
+        logger.warn(
+          `Retrying bible-api.com request (attempt ${attempt + 1}/${maxAttempts}) after ${delayMs}ms.${statusPart}`
+        );
+      },
+    }
+  );
+}
+
 async function fetchPassage(reference, options = {}) {
   const translation = (options.translation || DEFAULT_TRANSLATION).toLowerCase();
   const cacheTtlMs = Number(options.cacheTtlMs || DEFAULT_TTL_MS);
@@ -99,7 +170,25 @@ async function fetchPassage(reference, options = {}) {
   const url = buildBibleApiUrl(normalizedReference, translation);
   logger.debug(`Fetching bible-api.com passage: ${url}`);
 
-  const response = await fetchWithTimeout(url, options);
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await fetchWithRetry(url, options);
+  } catch (error) {
+    devBotLogs.logError('http.bibleApiWeb.fetch.error', error, {
+      translation,
+      reference: normalizedReference,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+
+  devBotLogs.logEvent('info', 'http.bibleApiWeb.fetch', {
+    translation,
+    reference: normalizedReference,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+  });
   if (!response.ok) {
     let detail = '';
     try {

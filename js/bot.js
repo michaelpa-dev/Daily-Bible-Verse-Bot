@@ -20,16 +20,21 @@ const {
   logRuntimeError,
   upsertBotStatusMessage,
 } = require('./services/botOps.js');
+const { runCommandSafely } = require('./services/commandRunner.js');
+const { startDiscordWatchdog } = require('./services/discordWatchdog.js');
 const { createHttpServer } = require('./api/httpServer.js');
+const devBotLogs = require('./services/devBotLogs.js');
+const { generateCorrelationId, runWithCorrelationId } = require('./services/correlation.js');
 const { handlePaginationInteraction } = require('./services/paginationInteractions.js');
 const { handleReadInteraction } = require('./services/readSessions.js');
 const { handlePlanInteraction } = require('./services/planInteractions.js');
 const { initializePlanScheduler } = require('./services/planScheduler.js');
+const runtimeHealth = require('./services/runtimeHealth.js');
+const { sleep } = require('./services/retry.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
-// Avoid excessive Discord API calls. Updating a "status" message every 5 seconds is noisy and can
-// contribute to rate limiting or instability.
-const BOT_STATUS_SCHEDULE = '*/1 * * * *';
+// Avoid updating Discord messages too frequently; this can trigger rate limits and cascade into failures.
+const BOT_STATUS_SCHEDULE = '*/15 * * * *';
 const DAILY_VERSE_SCHEDULE = '0 9 * * *';
 const DEFAULT_STATUS = 'the Word of God';
 const DELIVERY_CONCURRENCY = 5;
@@ -41,6 +46,7 @@ const client = new Client({
 
 client.commands = new Collection();
 let httpServer = null;
+let watchdog = null;
 
 function loadCommandModules() {
   const commandsPath = path.join(scriptDirectory, 'commands');
@@ -88,9 +94,13 @@ async function registerSlashCommands(guild) {
 }
 
 async function sendDailyVerseToSubscribedUsers() {
+  const start = Date.now();
   try {
     const subscribedUsers = await getSubscribedUsers();
     logger.info(`Sending daily verse to ${subscribedUsers.length} users`);
+    devBotLogs.logEvent('info', 'job.dailyVerse.start', {
+      subscribedUsers: subscribedUsers.length,
+    });
 
     const batch = [];
     for (const user of subscribedUsers) {
@@ -108,8 +118,16 @@ async function sendDailyVerseToSubscribedUsers() {
     if (batch.length > 0) {
       await Promise.allSettled(batch);
     }
+
+    devBotLogs.logEvent('info', 'job.dailyVerse.end', {
+      durationMs: Date.now() - start,
+      subscribedUsers: subscribedUsers.length,
+    });
   } catch (error) {
     logger.error('Error during daily verse delivery', error);
+    devBotLogs.logError('job.dailyVerse.error', error, {
+      durationMs: Date.now() - start,
+    });
   }
 }
 
@@ -145,6 +163,21 @@ function scheduleRecurringJobs() {
 
 client.once(Events.ClientReady, async () => {
   logger.info(`Logged in as ${client.user.username}`);
+  runtimeHealth.markDiscordReady(client);
+  watchdog = startDiscordWatchdog(client);
+
+  // Dev Discord logging (best-effort). This should never crash startup.
+  try {
+    devBotLogs.start(client);
+    const validated = await devBotLogs.validateStartup();
+    if (!validated.ok) {
+      logger.warn(`Dev #bot-logs startup validation failed: ${validated.reason}`);
+      // If logs are failing, make sure the status message is still maintained so we can debug.
+      await upsertBotStatusMessage(client);
+    }
+  } catch (error) {
+    logger.warn(`Dev #bot-logs initialization failed: ${error?.message || error}`);
+  }
 
   try {
     const avatarPath = path.join(scriptDirectory, '../assets/bible_scripture_icon.png');
@@ -158,11 +191,13 @@ client.once(Events.ClientReady, async () => {
 
   await updateActiveGuilds(client);
 
-  // Register commands with light throttling. Doing a burst in parallel can trigger rate limits.
+  // Register commands sequentially to avoid hitting burst rate limits on startup.
   for (const guild of client.guilds.cache.values()) {
     await registerSlashCommands(guild);
-    // Small delay to avoid spiky REST traffic on startup.
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    // Small delay keeps startups stable when in many guilds.
+    if (client.guilds.cache.size > 1) {
+      await sleep(1200);
+    }
   }
 
   scheduleRecurringJobs();
@@ -171,73 +206,130 @@ client.once(Events.ClientReady, async () => {
     await initializePlanScheduler(client);
   } catch (error) {
     logger.error('Failed to initialize reading plan scheduler', error);
+    devBotLogs.logError('planScheduler.init.error', error);
   }
 });
 
 client.on(Events.GuildCreate, async (guild) => {
   logger.info(`Joined guild ${guild.name} (${guild.id}), owner: ${guild.ownerId}`);
+  devBotLogs.logEvent('info', 'guild.join', { guildId: guild.id, guildName: guild.name });
   await registerSlashCommands(guild);
   await updateActiveGuilds(client);
 });
 
 client.on(Events.GuildDelete, async (guild) => {
   logger.info(`Removed from guild ${guild.name || 'unknown'} (${guild.id})`);
+  devBotLogs.logEvent('info', 'guild.leave', { guildId: guild.id, guildName: guild.name || 'unknown' });
   await updateActiveGuilds(client);
 });
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
-    try {
-      const handled =
-        (interaction.isButton() ? await handlePaginationInteraction(interaction) : false) ||
-        (interaction.isButton() ? await handlePlanInteraction(interaction) : false) ||
-        (await handleReadInteraction(interaction));
-      if (handled) {
-        return;
-      }
-    } catch (error) {
-      logger.error('Component interaction handler failed', error);
-      // Avoid throwing; fall through so Discord sees an error response.
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: 'An error occurred handling that interaction.',
-          ephemeral: true,
-        });
-      }
-      return;
-    }
-  }
-
-  if (!interaction.isChatInputCommand()) {
-    return;
-  }
-
-  const command = client.commands.get(interaction.commandName);
-  logger.info(
-    `Slash command received: ${interaction.commandName}, guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
-  );
-
-  if (!command) {
-    logger.warn(`No command handler found for: ${interaction.commandName}`);
-    return;
-  }
-
-  try {
-    await command.execute(interaction);
-  } catch (error) {
-    logger.error(`Unhandled error in command ${interaction.commandName}`, error);
-    await logCommandError(interaction, error, 'Unhandled command execution error');
-    const message = 'An error occurred while executing this command.';
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: message, ephemeral: true });
-    } else {
-      await interaction.reply({ content: message, ephemeral: true });
-    }
-  }
+client.on(Events.ShardDisconnect, (event) => {
+  runtimeHealth.markDiscordDisconnect(client, event?.reason || event?.code || 'disconnect');
 });
 
-async function shutdown() {
+client.on(Events.ShardReconnecting, () => {
+  runtimeHealth.markDiscordDisconnect(client, 'reconnecting');
+});
+
+client.on(Events.ShardReady, () => {
+  runtimeHealth.markDiscordReady(client);
+});
+
+client.on(Events.ShardResume, () => {
+  runtimeHealth.markDiscordReady(client);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  runtimeHealth.markInteraction(interaction);
+
+  const correlationId = generateCorrelationId();
+
+  await runWithCorrelationId(correlationId, async () => {
+    const baseFields = {
+      type: interaction.type,
+      userId: interaction.user?.id,
+      guildId: interaction.guildId || null,
+      channelId: interaction.channelId || null,
+    };
+
+    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
+      devBotLogs.logEvent('info', 'interaction.component', {
+        ...baseFields,
+        kind: interaction.isButton()
+          ? 'button'
+          : interaction.isStringSelectMenu()
+            ? 'select'
+            : 'modal',
+        customId: interaction.customId,
+      });
+
+      try {
+        const handled =
+          (interaction.isButton() ? await handlePaginationInteraction(interaction) : false) ||
+          (interaction.isButton() ? await handlePlanInteraction(interaction) : false) ||
+          (await handleReadInteraction(interaction));
+        if (handled) {
+          return;
+        }
+      } catch (error) {
+        logger.error('Component interaction handler failed', error);
+        devBotLogs.logError('interaction.component.error', error, {
+          ...baseFields,
+          customId: interaction.customId,
+        });
+        // Avoid throwing; fall through so Discord sees an error response.
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: 'An error occurred handling that interaction.', ephemeral: true });
+        }
+      }
+
+      return;
+    }
+
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
+
+    const command = client.commands.get(interaction.commandName);
+    logger.info(
+      `Slash command received: ${interaction.commandName}, guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
+    );
+
+    devBotLogs.logEvent('info', 'command.start', {
+      ...baseFields,
+      command: interaction.commandName,
+    });
+
+    if (!command) {
+      logger.warn(`No command handler found for: ${interaction.commandName}`);
+      devBotLogs.logEvent('warn', 'command.missing', {
+        ...baseFields,
+        command: interaction.commandName,
+      });
+      return;
+    }
+
+    const result = await runCommandSafely(interaction, command, {
+      logger,
+      logCommandErrorFn: logCommandError,
+      friendlyMessage: 'An error occurred while executing this command.',
+    });
+
+    devBotLogs.logEvent(result.ok ? 'info' : 'warn', 'command.end', {
+      ...baseFields,
+      command: interaction.commandName,
+      ok: result.ok,
+      durationMs: result.durationMs,
+    });
+  });
+});
+
+async function shutdown(signal = 'shutdown') {
   try {
+    devBotLogs.logEvent('info', 'bot.shutdown', { signal });
+    await devBotLogs.flush().catch(() => null);
+    devBotLogs.stop();
+    watchdog?.stop?.();
     client.destroy();
     if (httpServer) {
       await new Promise((resolve) => httpServer.close(resolve));
@@ -263,7 +355,10 @@ async function startHttpApiServer() {
     throw new Error(`Invalid HTTP port: ${portRaw}`);
   }
 
-  httpServer = createHttpServer();
+  httpServer = createHttpServer({
+    getHealthSnapshot: () => runtimeHealth.getSnapshot(client),
+    isReady: () => (typeof client.isReady === 'function' ? client.isReady() : false),
+  });
   await new Promise((resolve) => httpServer.listen(port, bindHost, resolve));
   logger.info(`HTTP API server listening on http://${bindHost}:${port}`);
 }
@@ -286,12 +381,12 @@ runBot().catch((error) => {
 });
 
 process.once('SIGINT', async () => {
-  await shutdown();
+  await shutdown('SIGINT');
   process.exit(0);
 });
 
 process.once('SIGTERM', async () => {
-  await shutdown();
+  await shutdown('SIGTERM');
   process.exit(0);
 });
 
@@ -301,18 +396,26 @@ process.on('unhandledRejection', async (reason) => {
   logger.error('Unhandled promise rejection', error);
   try {
     await logRuntimeError(client, error, 'unhandledRejection');
-  } catch (logError) {
-    logger.warn('Failed to send runtime error log for unhandledRejection', logError);
+  } catch {
+    // ignore secondary failures
   }
-  process.exit(1);
+
+  const fatal =
+    String(process.env.FATAL_ON_UNHANDLED_REJECTION || '').trim().toLowerCase() !== 'false';
+  if (fatal) {
+    logger.error('Exiting process due to unhandledRejection (FATAL_ON_UNHANDLED_REJECTION != false)');
+    process.exit(1);
+  }
 });
 
 process.on('uncaughtException', async (error) => {
   logger.error('Uncaught exception', error);
   try {
     await logRuntimeError(client, error, 'uncaughtException');
-  } catch (logError) {
-    logger.warn('Failed to send runtime error log for uncaughtException', logError);
+  } catch {
+    // ignore secondary failures
   }
+
+  // Treat uncaught exceptions as fatal; rely on Docker restart policy for recovery.
   process.exit(1);
 });

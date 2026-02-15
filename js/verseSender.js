@@ -1,8 +1,8 @@
-const { EmbedBuilder } = require('discord.js');
 const { logger } = require('./logger.js');
 const { getRandomBibleVerse } = require('./services/bibleApi');
 const { addVerseSent } = require('./db/statsDB.js');
 const { getTranslationLabel } = require('./constants/translations.js');
+const { buildStandardEmbed, COLORS } = require('./services/messageStyle.js');
 
 async function sendDailyVerse(client, userOrId, passage, options = {}) {
   const resolvedUserId = typeof userOrId === 'string' ? userOrId : userOrId?.id;
@@ -40,16 +40,17 @@ async function sendDailyVerse(client, userOrId, passage, options = {}) {
     `Sending verse to ${user.username} (${user.id}) ${verseReference} [${translationLabel}]`
   );
 
-  const embed = new EmbedBuilder()
-    .setTitle('Daily Bible Verse')
-    .setDescription(verseText)
-    .setColor('#0099ff')
-    .addFields(
-      { name: 'Reference', value: verseReference },
-      { name: 'Translation', value: translationLabel }
-    )
-    .setFooter({ text: 'Sent by Daily Bible Verse Bot' })
-    .setThumbnail(client.user.displayAvatarURL());
+  const title = passage === 'random' ? 'Random Bible Verse' : 'Daily Bible Verse';
+  const embed = buildStandardEmbed({
+    title,
+    description: verseText,
+    color: COLORS.primary,
+    fields: [
+      { name: 'Reference', value: verseReference, inline: false },
+      { name: 'Translation', value: translationLabel, inline: true },
+    ],
+    footerText: 'Daily Bible Verse Bot',
+  }).setThumbnail(client.user.displayAvatarURL());
 
   try {
     await user.send({ embeds: [embed] });

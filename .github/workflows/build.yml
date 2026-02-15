@@ -71,8 +71,21 @@ jobs:
 
           asset_name="${{ steps.meta.outputs.asset_name }}"
 
+          mkdir -p build
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cat > build/version.json <<EOF
+          {
+            "tag": "${{ steps.meta.outputs.release_tag }}",
+            "sha": "${GITHUB_SHA}",
+            "builtAt": "${built_at}",
+            "runId": "${GITHUB_RUN_ID}",
+            "runNumber": "${GITHUB_RUN_NUMBER}"
+          }
+          EOF
+
           # Keep the artifact small and deterministic.
           tar -czf "${asset_name}" \
+            build/version.json \
             Dockerfile \
             docker-compose.prod.yml \
             package.json \

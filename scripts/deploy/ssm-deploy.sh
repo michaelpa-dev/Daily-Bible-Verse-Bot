@@ -78,18 +78,19 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 artifact_root="$(cd "${script_dir}/../.." && pwd)"
 
 echo "Deploying DailyBibleVerseBot"
-echo "  environment: ${environment}"
-echo "  github_repo:  ${github_repo}"
-echo "  release_tag:  ${release_tag}"
-echo "  git_sha:      ${git_sha:-unknown}"
-echo "  deploy_root:  ${deploy_root}"
-echo "  artifact_root:${artifact_root}"
+echo "  environment:  ${environment}"
+echo "  github_repo:   ${github_repo}"
+echo "  release_tag:   ${release_tag}"
+echo "  git_sha:       ${git_sha:-unknown}"
+echo "  deploy_root:   ${deploy_root}"
+echo "  artifact_root: ${artifact_root}"
 
 aws_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
-echo "  aws_region:   ${aws_region}"
+echo "  aws_region:    ${aws_region}"
 
 container_name="daily-bible-verse-bot"
 project_name="daily-bible-verse-bot"
+
 release_tag_file="${deploy_root}/.release_tag"
 previous_release_tag=""
 if [[ -f "${release_tag_file}" ]]; then
@@ -119,6 +120,12 @@ if ! command -v aws >/dev/null 2>&1; then
     exit 1
   fi
 fi
+
+compose_cmd() {
+  local app_dir="$1"
+  shift
+  (cd "${app_dir}" && "${DOCKER_COMPOSE[@]}" -f docker-compose.prod.yml "$@")
+}
 
 mkdir -p "${deploy_root}/db" "${deploy_root}/logs/archive"
 
@@ -160,10 +167,80 @@ export BOT_TOKEN="${bot_token}"
 export DEPLOY_ENVIRONMENT="${environment}"
 export GIT_SHA="${git_sha:-unknown}"
 export RELEASE_TAG="${release_tag}"
+export DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Always-on #bot-logs in both canary + production. The bot's Discord log sink
+# is guarded by batching + a circuit breaker (`js/services/devBotLogs.js`),
+# so Discord posting failures won't crash the process.
+export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-true}"
+
+# Optional: help status embeds match GitHub Release timestamps even if the runtime can't read JSON.
+build_time=""
+if [[ -f "${artifact_root}/build/version.json" ]] && command -v python3 >/dev/null 2>&1; then
+  build_time="$(
+    python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('builtAt',''))" "${artifact_root}/build/version.json" 2>/dev/null || true
+  )"
+fi
+if [[ -n "${build_time}" ]]; then
+  export BUILD_TIME="${build_time}"
+fi
 
 app_next="${deploy_root}/app.next"
 app_current="${deploy_root}/app"
 app_prev="${deploy_root}/app.prev"
+
+rollback_enabled="false"
+
+rollback() {
+  if [[ "${rollback_enabled}" != "true" ]]; then
+    return
+  fi
+
+  echo "ERROR: deployment failed. Attempting rollback..." >&2
+
+  local rollback_dir=""
+  if [[ -f "${app_prev}/docker-compose.prod.yml" ]]; then
+    rollback_dir="${app_prev}"
+  elif [[ -f "${app_current}/docker-compose.prod.yml" ]]; then
+    rollback_dir="${app_current}"
+  fi
+
+  if [[ -z "${rollback_dir}" ]]; then
+    echo "Rollback not possible: no previous compose file found." >&2
+    return
+  fi
+
+  # Ensure the fixed container name doesn't block rollback.
+  if docker inspect "${container_name}" >/dev/null 2>&1; then
+    docker rm -f "${container_name}" >/dev/null 2>&1 || true
+  fi
+
+  export DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if [[ -n "${previous_release_tag}" ]]; then
+    export RELEASE_TAG="${previous_release_tag}"
+    echo "Rolling back to previous release tag: ${previous_release_tag}" >&2
+    compose_cmd "${rollback_dir}" up -d --remove-orphans || true
+  else
+    echo "No previous release tag recorded; rebuilding rollback image from source." >&2
+    compose_cmd "${rollback_dir}" up -d --build --remove-orphans || true
+  fi
+
+  compose_cmd "${rollback_dir}" ps || true
+
+  echo "Rollback attempt completed. Inspect container logs for details:"
+  docker logs --tail 200 "${container_name}" 2>&1 || true
+}
+
+on_exit() {
+  exit_code=$?
+  if [[ "${exit_code}" -ne 0 ]]; then
+    echo "Deploy failed with exit code ${exit_code}." >&2
+    rollback || true
+  fi
+}
+
+trap on_exit EXIT
 
 rm -rf "${app_next}"
 mkdir -p "${app_next}"
@@ -183,49 +260,13 @@ fi
 # Build the next image before stopping the current container. This keeps downtime minimal and
 # avoids taking the bot offline if the build fails.
 echo "Building next image for release ${release_tag} (no downtime)..."
-"${DOCKER_COMPOSE[@]}" -f "${compose_file}" build
-
-rollback_enabled="false"
-rollback() {
-  if [[ "${rollback_enabled}" != "true" ]]; then
-    return
-  fi
-
-  echo "ERROR: deployment failed. Attempting rollback..." >&2
-
-  # Clean up a potentially broken container so the rollback can reuse the fixed container_name.
-  if docker inspect "${container_name}" >/dev/null 2>&1; then
-    docker rm -f "${container_name}" >/dev/null 2>&1 || true
-  fi
-
-  local rollback_compose=""
-  if [[ -f "${app_prev}/docker-compose.prod.yml" ]]; then
-    rollback_compose="${app_prev}/docker-compose.prod.yml"
-  elif [[ -f "${app_current}/docker-compose.prod.yml" ]]; then
-    rollback_compose="${app_current}/docker-compose.prod.yml"
-  fi
-
-  if [[ -z "${rollback_compose}" ]]; then
-    echo "Rollback not possible: no previous compose file found." >&2
-    return
-  fi
-
-  if [[ -n "${previous_release_tag}" ]]; then
-    export RELEASE_TAG="${previous_release_tag}"
-    echo "Rolling back to previous release tag: ${previous_release_tag}" >&2
-    "${DOCKER_COMPOSE[@]}" -f "${rollback_compose}" up -d --remove-orphans || true
-  else
-    echo "No previous release tag recorded; rebuilding rollback image from source." >&2
-    "${DOCKER_COMPOSE[@]}" -f "${rollback_compose}" up -d --build --remove-orphans || true
-  fi
-}
-trap rollback ERR
+compose_cmd "${app_next}" build
 
 # Stop the running service (if any) before swapping code directories.
 if [[ -f "${app_current}/docker-compose.prod.yml" ]]; then
   rollback_enabled="true"
   echo "Stopping existing service..."
-  "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" down --remove-orphans || true
+  compose_cmd "${app_current}" down --remove-orphans || true
 fi
 
 # Extra safety: ensure the fixed container name doesn't block re-deploys if compose
@@ -242,8 +283,8 @@ fi
 mv "${app_next}" "${app_current}"
 
 echo "Starting service..."
-"${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" up -d --remove-orphans
-"${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" ps
+compose_cmd "${app_current}" up -d --remove-orphans
+compose_cmd "${app_current}" ps
 
 if ! docker inspect "${container_name}" >/dev/null 2>&1; then
   echo "Expected container ${container_name} not found after deploy." >&2
@@ -316,3 +357,4 @@ done < <(docker images --format '{{.Tag}}' daily-bible-verse-bot 2>/dev/null | s
 docker image prune -f >/dev/null || true
 
 echo "Deploy finished successfully."
+

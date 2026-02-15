@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getStats, addCommandExecution } = require('../db/statsDB.js');
-const { version } = require('../config.js');
+const { getBuildInfo } = require('../services/buildInfo.js');
 
 module.exports = {
   data: new SlashCommandBuilder().setName('stats').setDescription('Show bot statistics'),
@@ -8,6 +8,7 @@ module.exports = {
     await addCommandExecution();
 
     const stats = await getStats();
+    const buildInfo = getBuildInfo();
     const uptime = interaction.client.uptime || 0;
 
     const days = Math.floor(uptime / 86400000);
@@ -29,7 +30,8 @@ module.exports = {
         },
         { name: 'Total Active Guilds', value: String(stats.activeGuilds), inline: true },
         { name: 'Uptime', value: `${days}d ${hours}h ${minutes}m ${seconds}s`, inline: true },
-        { name: 'Bot Version', value: version, inline: true }
+        { name: 'Release Tag', value: buildInfo.releaseTag, inline: true },
+        { name: 'Git SHA', value: buildInfo.gitSha, inline: true }
       )
       .setThumbnail(interaction.client.user.displayAvatarURL());
 
