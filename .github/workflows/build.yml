@@ -221,6 +221,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ steps.meta.outputs.release_tag }}
         run: |
           set -euo pipefail
 
@@ -237,9 +238,9 @@ jobs:
               .[]
               | select(.prerelease == true)
               | select(.tag_name | startswith("canary-"))
-              | { tag: .tag_name, created: .created_at }
+              | { tag: .tag_name, sortKey: (.published_at // .created_at // .updated_at) }
             ]
-            | sort_by(.created)
+            | sort_by(.sortKey)
             | reverse
             | .[5:]
             | .[].tag
@@ -247,6 +248,12 @@ jobs:
             echo "Warning: jq failed while computing releases to delete. Skipping prune."
             exit 0
           }
+
+          # Safety guard: never delete the release we just created for this workflow run,
+          # even if sorting/ordering is unexpected.
+          if [ -n "${to_delete}" ] && [ "${to_delete}" != "null" ]; then
+            to_delete="$(printf '%s\n' "${to_delete}" | grep -v "^${CURRENT_TAG}$" || true)"
+          fi
 
           if [ -z "${to_delete}" ] || [ "${to_delete}" = "null" ]; then
             echo "No old canary releases to delete."
