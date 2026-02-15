@@ -40,6 +40,8 @@ This bot is primarily operated via Discord slash commands.
   - Reading plans (see `docs/reading-plans.md`).
 - `/stats`
   - Show basic usage stats.
+- `/give`
+  - Ways to support development (GitHub Sponsors + crypto addresses).
 - `/support`
   - Link to the GitHub issue tracker for help/bugs.
 

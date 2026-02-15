@@ -14,6 +14,7 @@ Daily Bible Verse Bot is a Discord bot that delivers daily verses, random verse 
 - Dev server bootstrap automation for roles/channels/overwrites/templates.
 - Ops commands for health, version, and release notes.
 - Structured bot error logging to `#bot-logs`.
+- Support links for contributing / sponsoring (`/give`, `/support`).
 
 ## Installation
 
@@ -104,6 +105,7 @@ See `docs/deployments/runbook.md` for the operational checklist and troubleshoot
 - `/plan`
 - `/settranslation`
 - `/stats`
+- `/give`
 - `/support`
 - `/health`
 - `/version`
