@@ -7,3 +7,4 @@ node_modules
 /db/stats.json
 /db/subscribed_users.json
 .vscode
+tmp/
