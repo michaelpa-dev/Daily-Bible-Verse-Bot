@@ -157,8 +157,8 @@ export RELEASE_TAG="${release_tag}"
 export DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # Always-on #bot-logs in both canary + production. The bot's Discord log sink
-# is guarded by batching + a circuit breaker, so this won't crash the process
-# if Discord posting fails.
+# is guarded by batching + a circuit breaker (`js/services/devBotLogs.js`),
+# so Discord posting failures won't crash the process.
 export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-true}"
 
 app_next="${deploy_root}/app.next"

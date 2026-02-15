@@ -57,3 +57,29 @@ test('resolveBook returns candidates for ambiguous inputs', () => {
   assert.ok(ids.includes('2SA'));
 });
 
+test('resolveBook rejects empty or garbage input without throwing', () => {
+  assert.equal(resolveBook('').kind, 'not_found');
+  assert.equal(resolveBook('   ').kind, 'not_found');
+  assert.equal(resolveBook('@@@###').kind, 'not_found');
+});
+
+test('resolveBook handles roman numerals + punctuation', () => {
+  assert.equal(resolveBook('I-SAMUEL!!!').kind, 'resolved');
+  assert.equal(resolveBook('I-SAMUEL!!!').bookId, '1SA');
+});
+
+test('resolveBook does not auto-resolve impossible ordinals', () => {
+  const result = resolveBook('3 samuel');
+  assert.notEqual(result.kind, 'resolved');
+
+  const ids = result.candidates.map((candidate) => candidate.bookId);
+  assert.ok(ids.includes('1SA') || ids.includes('2SA'));
+});
+
+test('resolveBook does not auto-resolve ordinals on non-ordinal books', () => {
+  const result = resolveBook('1 genesis');
+  assert.notEqual(result.kind, 'resolved');
+
+  const ids = result.candidates.map((candidate) => candidate.bookId);
+  assert.ok(ids.includes('GEN'));
+});

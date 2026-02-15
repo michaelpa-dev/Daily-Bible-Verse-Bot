@@ -22,6 +22,15 @@ const DEFAULT_MAX_CANDIDATES = 5;
 // input is clear, and otherwise we return candidate suggestions for confirmation.
 const AUTO_RESOLVE_MIN_SCORE = 0.92;
 const AMBIGUOUS_SCORE_DELTA = 0.06;
+// When an alias is *known ambiguous* (example: "sam" -> 1 Samuel or 2 Samuel),
+// we assign a high score so it stays at the top of suggestions, but keep it
+// below AUTO_RESOLVE_MIN_SCORE so callers always prompt for confirmation.
+const AMBIGUOUS_ALIAS_SCORE = 0.86;
+
+// Scoring penalties used when a user provides an ordinal (1/2/3) and it doesn't
+// match the candidate book.
+const ORDINAL_MISMATCH_PENALTY = 0.35;
+const ORDINAL_ON_NON_ORDINAL_BOOK_PENALTY = 0.15;
 
 let cachedAliasIndex = null;
 
@@ -226,7 +235,8 @@ function buildAliasIndex() {
   }
 
   // Add a few extremely common shorthand inputs that are ambiguous unless an ordinal is present.
-  // We intentionally return multiple candidates so the caller can prompt for confirmation.
+  // books.js intentionally focuses on disambiguated aliases ("1 sam", "2 sam", etc). Here we
+  // also accept the ambiguous forms ("sam", "samuel") so we can prompt users to confirm.
   addAlias('sam', '1SA');
   addAlias('sam', '2SA');
   addAlias('samuel', '1SA');
@@ -284,7 +294,12 @@ function resolveBook(input, options = {}) {
 
     // Ambiguous alias: return candidates so callers can confirm quickly.
     const candidates = ids
-      .map((bookId) => ({ bookId, book: getBookById(bookId), score: 0.86, method: 'alias' }))
+      .map((bookId) => ({
+        bookId,
+        book: getBookById(bookId),
+        score: AMBIGUOUS_ALIAS_SCORE,
+        method: 'alias',
+      }))
       .filter((candidate) => candidate.book);
 
     return {
@@ -317,9 +332,9 @@ function resolveBook(input, options = {}) {
 
     let score = best;
     if (inputOrdinal && bookOrdinal && inputOrdinal !== bookOrdinal) {
-      score *= 0.35;
+      score *= ORDINAL_MISMATCH_PENALTY;
     } else if (inputOrdinal && !bookOrdinal) {
-      score *= 0.15;
+      score *= ORDINAL_ON_NON_ORDINAL_BOOK_PENALTY;
     }
 
     scored.push({ bookId: book.id, book, score: clamp01(score), method: 'fuzzy' });
@@ -385,4 +400,3 @@ module.exports = {
     tokenize,
   },
 };
-

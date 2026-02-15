@@ -137,6 +137,9 @@ function buildBookSuggestions(candidates) {
     seen.add(bookId);
     const book = candidate.book || getBookById(bookId);
     if (!book) {
+      // Defensive: the resolver should only emit canonical bookIds; if this ever
+      // happens it indicates a bug in book resolution or candidate shaping.
+      devBotLogs.logEvent('debug', 'reference.book.suggestion.missing', { bookId });
       continue;
     }
     unique.push(`${book.name} (${book.id})`);
@@ -146,6 +149,10 @@ function buildBookSuggestions(candidates) {
 }
 
 function parseScriptureReferenceDetailed(input, options = {}) {
+  // This is the "new" reference parser path that includes:
+  // - fuzzy/alias book resolution (human-friendly input)
+  // - structured output ("ok" vs "needs_confirmation" vs "error")
+  // - chapter existence validation using WEB metadata
   const parts = parseScriptureReferenceParts(input);
   if (parts.kind !== 'parts') {
     return parts;

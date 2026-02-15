@@ -298,11 +298,15 @@ function formatPendingReference(pending) {
   return verseSpec ? `${bookPart} ${chapter}:${verseSpec}` : `${bookPart} ${chapter}`;
 }
 
-function buildBookResolutionSelect(session, action, candidates = [], options = {}) {
+function buildBookResolutionSelect(session, action, candidateBookIds = [], options = {}) {
   const menuOptions = [];
 
+  // Discord select menus are capped at 25 options. Reserve one slot for "Cancel"
+  // so the user can always bail out even when there are many suggestions.
+  const limitedCandidateBookIds = (candidateBookIds || []).slice(0, 24);
+
   const seen = new Set();
-  for (const candidate of candidates) {
+  for (const candidate of limitedCandidateBookIds) {
     const bookId = String(candidate || '').toUpperCase();
     if (!bookId || seen.has(bookId)) {
       continue;
@@ -318,7 +322,6 @@ function buildBookResolutionSelect(session, action, candidates = [], options = {
       label: book.name,
       description: book.id,
       value: book.id,
-      default: menuOptions.length === 0,
     });
   }
 

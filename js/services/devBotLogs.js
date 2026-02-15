@@ -129,6 +129,7 @@ const state = {
   disabledUntilMs: 0,
   droppedCount: 0,
   lastWarningAtMs: 0,
+  lastEnqueueWarningAtMs: 0,
   // Coalescing
   lastEnqueuedKey: null,
   lastEnqueuedAtMs: 0,
@@ -496,14 +497,27 @@ function getHealth() {
 }
 
 function logEvent(level, event, fields, message) {
-  enqueue({
-    timestamp: toIso(),
-    level: String(level || 'info').toLowerCase(),
-    event: String(event || 'event').trim() || 'event',
-    message: message != null ? String(message) : null,
-    fields: fields && typeof fields === 'object' ? fields : null,
-    correlationId: getCorrelationId(),
-  });
+  try {
+    enqueue({
+      timestamp: toIso(),
+      level: String(level || 'info').toLowerCase(),
+      event: String(event || 'event').trim() || 'event',
+      message: message != null ? String(message) : null,
+      fields: fields && typeof fields === 'object' ? fields : null,
+      correlationId: getCorrelationId(),
+    });
+  } catch (error) {
+    // Logging must never crash the bot. If this ever happens, degrade to local logs and move on.
+    const now = Date.now();
+    if (now - state.lastEnqueueWarningAtMs > 60_000) {
+      state.lastEnqueueWarningAtMs = now;
+      try {
+        logger.warn('devBotLogs.logEvent failed; continuing without Discord sink.', error);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 function logError(event, error, fields) {
