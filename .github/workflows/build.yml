@@ -146,6 +146,13 @@ jobs:
             fi
           fi
 
+          support_changes="false"
+          if [ -n "${previous_tag}" ]; then
+            if git diff --name-only "${previous_tag}..${RELEASE_TAG}" | grep -E -q '^(js/commands/give\\.js|\\.github/FUNDING\\.yml)$'; then
+              support_changes="true"
+            fi
+          fi
+
           cat > release_body.md <<EOF
           ## 🚀 New Release: Daily Bible Verse Bot ${RELEASE_TAG} 📖
 
@@ -160,6 +167,15 @@ jobs:
 
           ## Deployment
           - This release includes deployment or infrastructure changes. Review \`docs/deployments/runbook.md\` before promoting.
+          EOF
+          fi
+
+          if [ "${support_changes}" = "true" ]; then
+            cat >> release_body.md <<'EOF'
+
+          ## Added
+          - Added: /give support command
+          - Added: GitHub Sponsors button (FUNDING.yml)
           EOF
           fi
 
