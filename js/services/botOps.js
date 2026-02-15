@@ -135,7 +135,6 @@ async function getBotLogsChannel(client, guildId = getDefaultDevGuildId()) {
       return channel;
     }
   }
-
   const guild = getGuildFromClient(client, guildId);
   if (!guild) {
     return null;
@@ -288,10 +287,13 @@ async function upsertBotStatusMessage(client, guildId = getDefaultDevGuildId()) 
   return edited;
 }
 
-function buildErrorLogPayload({ context, userTag, commandName, error }) {
+function safeEmbedFieldValue(value) {
+  return truncateText(value, DISCORD_EMBED_FIELD_VALUE_MAX);
+}
+
+function buildErrorLogPayload({ context, userTag, commandName, origin, error }) {
   try {
-    const safeValue = (value) => truncateText(value, DISCORD_EMBED_FIELD_VALUE_MAX);
-    const errorSummary = safeValue(error?.message || String(error));
+    const errorSummary = safeEmbedFieldValue(error?.message || String(error));
     const stackSnippet = truncateText(
       error?.stack || 'No stack available',
       // Keep under 1024 once we add code fences.
@@ -316,12 +318,15 @@ function buildErrorLogPayload({ context, userTag, commandName, error }) {
       .setColor('#c0392b')
       .setTimestamp()
       .addFields(
-        { name: 'Context', value: safeValue(context || 'runtime'), inline: true },
-        { name: 'Command', value: safeValue(commandName || 'N/A'), inline: true },
-        { name: 'User', value: safeValue(userTag || 'N/A'), inline: true },
+        { name: 'Context', value: safeEmbedFieldValue(context || 'runtime'), inline: true },
+        { name: 'Command', value: safeEmbedFieldValue(commandName || 'N/A'), inline: true },
+        { name: 'User', value: safeEmbedFieldValue(userTag || 'N/A'), inline: true },
+        ...(origin
+          ? [{ name: 'Origin', value: safeEmbedFieldValue(origin), inline: false }]
+          : []),
         { name: 'Summary', value: errorSummary || 'Unknown error' },
-        { name: 'Stack', value: safeValue(`\`\`\`\n${stackSnippet}\n\`\`\``) },
-        { name: 'Issue', value: safeValue(`[Create GitHub issue](${normalizedIssueUrl})`) }
+        { name: 'Stack', value: safeEmbedFieldValue(`\`\`\`\n${stackSnippet}\n\`\`\``) },
+        { name: 'Issue', value: safeEmbedFieldValue(`[Create GitHub issue](${normalizedIssueUrl})`) }
       );
 
     return { embeds: [embed] };
@@ -397,10 +402,15 @@ async function logCommandError(interaction, error, summary) {
 
   const userTag = `${interaction.user.username} (${interaction.user.id})`;
   const commandName = `/${interaction.commandName || 'unknown'}`;
+  const origin = interaction.guild
+    ? `guild=${interaction.guild.name} (${interaction.guildId}), channel=${interaction.channel?.name || interaction.channelId || 'unknown'}`
+    : `DM channel=${interaction.channelId || 'unknown'}`;
+
   return sendBotLogMessage(interaction.client, getDefaultDevGuildId(), buildErrorLogPayload({
     context: summary || 'command',
     userTag,
     commandName,
+    origin,
     error,
   }));
 }

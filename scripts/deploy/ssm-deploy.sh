@@ -165,6 +165,43 @@ app_next="${deploy_root}/app.next"
 app_current="${deploy_root}/app"
 app_prev="${deploy_root}/app.prev"
 
+rollback_ready=0
+rollback_compose_file=""
+
+rollback() {
+  if [[ "${rollback_ready}" != "1" ]]; then
+    return
+  fi
+
+  if [[ -z "${rollback_compose_file}" || ! -f "${rollback_compose_file}" ]]; then
+    echo "Rollback requested, but no previous compose file is available." >&2
+    return
+  fi
+
+  echo "Attempting rollback using ${rollback_compose_file}..."
+
+  # Ensure the fixed container name doesn't block rollback.
+  if docker inspect "${container_name}" >/dev/null 2>&1; then
+    docker rm -f "${container_name}" >/dev/null 2>&1 || true
+  fi
+
+  "${DOCKER_COMPOSE[@]}" -f "${rollback_compose_file}" up -d --build --remove-orphans || true
+  "${DOCKER_COMPOSE[@]}" -f "${rollback_compose_file}" ps || true
+
+  echo "Rollback attempt completed. Inspect container logs for details:"
+  docker logs --tail 200 "${container_name}" 2>&1 || true
+}
+
+on_exit() {
+  exit_code=$?
+  if [[ "${exit_code}" -ne 0 ]]; then
+    echo "Deploy failed with exit code ${exit_code}." >&2
+    rollback
+  fi
+}
+
+trap on_exit EXIT
+
 rm -rf "${app_next}"
 mkdir -p "${app_next}"
 
@@ -182,6 +219,9 @@ fi
 
 # Stop the running service (if any) before swapping code directories.
 if [[ -f "${app_current}/docker-compose.prod.yml" ]]; then
+  rollback_ready=1
+  rollback_compose_file="${app_current}/docker-compose.prod.yml"
+
   echo "Stopping existing service..."
   "${DOCKER_COMPOSE[@]}" -f "${app_current}/docker-compose.prod.yml" down --remove-orphans || true
 fi
@@ -199,6 +239,9 @@ if [[ -d "${app_current}" ]]; then
 fi
 mv "${app_next}" "${app_current}"
 
+if [[ -f "${app_prev}/docker-compose.prod.yml" ]]; then
+  rollback_ready=1
+  rollback_compose_file="${app_prev}/docker-compose.prod.yml"
 build_time=""
 if [[ -f "${app_current}/build/version.json" ]]; then
   build_time="$(
