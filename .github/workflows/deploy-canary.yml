@@ -105,6 +105,34 @@ jobs:
           aws ec2 wait instance-running --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
           aws ec2 wait instance-status-ok --region "${AWS_REGION}" --instance-ids "${INSTANCE_ID}"
 
+      - name: Wait for SSM agent to be Online
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ steps.resolve.outputs.instance_id }}
+        run: |
+          set -euo pipefail
+
+          # Avoid delayed SSM RunCommand executions which can cause signed GitHub asset URLs to expire.
+          # We wait until the instance is registered with SSM and reporting PingStatus=Online.
+          for attempt in $(seq 1 60); do
+            ping_status="$(aws ssm describe-instance-information \
+              --region "${AWS_REGION}" \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --query "InstanceInformationList[0].PingStatus" \
+              --output text 2>/dev/null || true)"
+
+            if [ "${ping_status}" = "Online" ]; then
+              echo "SSM agent is Online for ${INSTANCE_ID}."
+              exit 0
+            fi
+
+            echo "Waiting for SSM agent to be Online (attempt ${attempt}/60). Current: ${ping_status}"
+            sleep 10
+          done
+
+          echo "SSM agent did not become Online for ${INSTANCE_ID}. Check instance profile + amazon-ssm-agent." >&2
+          exit 1
+
       - name: Sync BOT_TOKEN to SSM Parameter Store (SecureString)
         shell: bash
         env:
