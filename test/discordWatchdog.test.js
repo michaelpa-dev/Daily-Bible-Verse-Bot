@@ -57,4 +57,3 @@ test('watchdog triggers exit when stuck beyond maxStuckMs', () => {
   assert.equal(decision.shouldExit, true);
   assert.match(decision.reason || '', /stuck/i);
 });
-

@@ -43,5 +43,8 @@ test('getVersionInfo prefers env RELEASE_TAG over manifest tag', () => {
 
 test('normalizeIsoTimestamp converts epoch seconds to ISO', () => {
   assert.equal(__private.normalizeIsoTimestamp('0'), null);
-  assert.equal(__private.normalizeIsoTimestamp('1700000000'), new Date(1700000000 * 1000).toISOString());
+  assert.equal(
+    __private.normalizeIsoTimestamp('1700000000'),
+    new Date(1700000000 * 1000).toISOString()
+  );
 });

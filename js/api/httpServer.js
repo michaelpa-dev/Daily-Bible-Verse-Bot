@@ -38,8 +38,7 @@ function createHttpServer(options = {}) {
   const fetchImpl = options.fetchImpl;
   const getHealthSnapshot =
     typeof options.getHealthSnapshot === 'function' ? options.getHealthSnapshot : null;
-  const isReady =
-    typeof options.isReady === 'function' ? options.isReady : () => false;
+  const isReady = typeof options.isReady === 'function' ? options.isReady : () => false;
 
   return http.createServer(async (req, res) => {
     const method = String(req.method || 'GET').toUpperCase();

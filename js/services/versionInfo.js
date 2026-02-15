@@ -53,9 +53,7 @@ function normalizeIsoTimestamp(value) {
 }
 
 function resolveRuntimeEnvironment(environment = process.env) {
-  return String(
-    environment.DEPLOY_ENVIRONMENT || environment.APP_ENV || environment.NODE_ENV || ''
-  )
+  return String(environment.DEPLOY_ENVIRONMENT || environment.APP_ENV || environment.NODE_ENV || '')
     .trim()
     .toLowerCase();
 }
@@ -84,10 +82,7 @@ function resolveGitSha(options = {}) {
   const environment = options.environment || process.env;
 
   const environmentSha =
-    environment.GIT_SHA ||
-    environment.COMMIT_SHA ||
-    environment.GITHUB_SHA ||
-    '';
+    environment.GIT_SHA || environment.COMMIT_SHA || environment.GITHUB_SHA || '';
   if (environmentSha) {
     cachedGitSha = String(environmentSha).slice(0, 12);
     return cachedGitSha;

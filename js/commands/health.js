@@ -22,7 +22,11 @@ module.exports = {
     embed.addFields(
       { name: 'Discord Ready', value: snapshot.discord.ready ? 'Yes' : 'No', inline: true },
       { name: 'WS Status', value: snapshot.discord.wsStatusName || 'Unknown', inline: true },
-      { name: 'WS Ping', value: snapshot.discord.wsPingMs != null ? `${snapshot.discord.wsPingMs}ms` : 'N/A', inline: true },
+      {
+        name: 'WS Ping',
+        value: snapshot.discord.wsPingMs != null ? `${snapshot.discord.wsPingMs}ms` : 'N/A',
+        inline: true,
+      },
       {
         name: 'Last Command',
         value: snapshot.interactions.lastCommandAt

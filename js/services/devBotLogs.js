@@ -1,6 +1,4 @@
-const {
-  ChannelType,
-} = require('discord.js');
+const { ChannelType } = require('discord.js');
 
 const { logger } = require('../logger.js');
 const { TARGET_DEV_GUILD_ID, CHANNEL_NAMES } = require('../constants/devServerSpec.js');
@@ -42,7 +40,9 @@ function parsePositiveInt(value, defaultValue) {
 }
 
 function parseLogLevel(value, defaultLevel) {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   if (Object.prototype.hasOwnProperty.call(LEVELS, normalized)) {
     return normalized;
   }
@@ -58,10 +58,7 @@ function sanitizeValue(value) {
     return '';
   }
 
-  return String(value)
-    .replace(/\r/g, '')
-    .replace(/\n/g, '\\n')
-    .slice(0, 500);
+  return String(value).replace(/\r/g, '').replace(/\n/g, '\\n').slice(0, 500);
 }
 
 function toIso(value) {
@@ -161,7 +158,8 @@ async function resolveLogsChannel() {
       }
     }
 
-    const guild = client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
+    const guild =
+      client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
     if (!guild) {
       state.resolvingChannel = null;
       return null;
@@ -329,9 +327,10 @@ function registerFailure(error) {
   // Throttle warning spam to local logs.
   if (now - state.lastWarningAtMs > 60_000) {
     state.lastWarningAtMs = now;
-    const until = state.disabledUntilMs > now
-      ? `; circuit open for ${Math.round((state.disabledUntilMs - now) / 1000)}s`
-      : '';
+    const until =
+      state.disabledUntilMs > now
+        ? `; circuit open for ${Math.round((state.disabledUntilMs - now) / 1000)}s`
+        : '';
     logger.warn(
       `Failed to post to dev #bot-logs (${state.consecutiveFailures} consecutive failures)${until}: ${error?.message || error}`
     );

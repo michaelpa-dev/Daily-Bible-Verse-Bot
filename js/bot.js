@@ -219,7 +219,10 @@ client.on(Events.GuildCreate, async (guild) => {
 
 client.on(Events.GuildDelete, async (guild) => {
   logger.info(`Removed from guild ${guild.name || 'unknown'} (${guild.id})`);
-  devBotLogs.logEvent('info', 'guild.leave', { guildId: guild.id, guildName: guild.name || 'unknown' });
+  devBotLogs.logEvent('info', 'guild.leave', {
+    guildId: guild.id,
+    guildName: guild.name || 'unknown',
+  });
   await updateActiveGuilds(client);
 });
 
@@ -279,7 +282,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
         // Avoid throwing; fall through so Discord sees an error response.
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ content: 'An error occurred handling that interaction.', ephemeral: true });
+          await interaction.reply({
+            content: 'An error occurred handling that interaction.',
+            ephemeral: true,
+          });
         }
       }
 
@@ -401,9 +407,13 @@ process.on('unhandledRejection', async (reason) => {
   }
 
   const fatal =
-    String(process.env.FATAL_ON_UNHANDLED_REJECTION || '').trim().toLowerCase() !== 'false';
+    String(process.env.FATAL_ON_UNHANDLED_REJECTION || '')
+      .trim()
+      .toLowerCase() !== 'false';
   if (fatal) {
-    logger.error('Exiting process due to unhandledRejection (FATAL_ON_UNHANDLED_REJECTION != false)');
+    logger.error(
+      'Exiting process due to unhandledRejection (FATAL_ON_UNHANDLED_REJECTION != false)'
+    );
     process.exit(1);
   }
 });

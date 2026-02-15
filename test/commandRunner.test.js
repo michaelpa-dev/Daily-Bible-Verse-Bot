@@ -80,4 +80,3 @@ test('runCommandSafely uses followUp when interaction already replied', async ()
   assert.equal(interaction.followUpCalls.length, 1);
   assert.deepEqual(interaction.followUpCalls[0], { content: 'friendly', ephemeral: true });
 });
-
