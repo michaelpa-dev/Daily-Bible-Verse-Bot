@@ -79,11 +79,17 @@ function buildConfig(environment = process.env) {
     .trim()
     .toLowerCase();
 
-  const enabledDefault = runtimeEnvironment === 'canary';
+  // #bot-logs must be always-on in both canary + production. Keep it opt-in for
+  // local development unless explicitly enabled, to avoid noisy failures when
+  // the bot isn't present in the dev guild.
+  const enabledDefault = runtimeEnvironment === 'canary' || runtimeEnvironment === 'production';
   const enabled = parseBoolean(environment.DEV_LOGGING_ENABLED, enabledDefault);
 
-  const defaultLevel = runtimeEnvironment === 'production' ? 'warn' : 'info';
-  const level = parseLogLevel(environment.DEV_LOG_LEVEL, defaultLevel);
+  // Prefer DEV_LOG_LEVEL for the Discord sink, but fall back to LOG_LEVEL so
+  // operators only have to learn one knob in simple setups.
+  const defaultLevel = 'info';
+  const configuredLevel = environment.DEV_LOG_LEVEL ?? environment.LOG_LEVEL;
+  const level = parseLogLevel(configuredLevel, defaultLevel);
 
   return {
     enabled,
@@ -123,6 +129,7 @@ const state = {
   disabledUntilMs: 0,
   droppedCount: 0,
   lastWarningAtMs: 0,
+  lastEnqueueWarningAtMs: 0,
   // Coalescing
   lastEnqueuedKey: null,
   lastEnqueuedAtMs: 0,
@@ -490,14 +497,27 @@ function getHealth() {
 }
 
 function logEvent(level, event, fields, message) {
-  enqueue({
-    timestamp: toIso(),
-    level: String(level || 'info').toLowerCase(),
-    event: String(event || 'event').trim() || 'event',
-    message: message != null ? String(message) : null,
-    fields: fields && typeof fields === 'object' ? fields : null,
-    correlationId: getCorrelationId(),
-  });
+  try {
+    enqueue({
+      timestamp: toIso(),
+      level: String(level || 'info').toLowerCase(),
+      event: String(event || 'event').trim() || 'event',
+      message: message != null ? String(message) : null,
+      fields: fields && typeof fields === 'object' ? fields : null,
+      correlationId: getCorrelationId(),
+    });
+  } catch (error) {
+    // Logging must never crash the bot. If this ever happens, degrade to local logs and move on.
+    const now = Date.now();
+    if (now - state.lastEnqueueWarningAtMs > 60_000) {
+      state.lastEnqueueWarningAtMs = now;
+      try {
+        logger.warn('devBotLogs.logEvent failed; continuing without Discord sink.', error);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 function logError(event, error, fields) {
