@@ -53,10 +53,13 @@ P1 gaps found:
 - Reading plan DM start (docs claim DM user plans, but DM slash invocation is not available with current registration strategy)
 - Deploy reliability risk: signed GitHub asset URLs can expire before EC2 downloads if SSM is delayed
 
+Issues created for P1 gaps:
+- #37 Reading plans: docs claim DM user plans but slash commands are guild-only (user plans unreachable)
+- #38 CI/CD: avoid signed GitHub asset URL expiry during SSM deploys (intermittent 403 risk)
+
 ## Suggested Gap Closure Order
 
 1. Decide whether DM slash commands are a goal:
    - If yes: implement global command registration plus dev-only command scoping.
    - If no: update docs to remove DM plan start claims and adjust UX to guide guild-only usage.
 2. Improve deploy artifact transfer to eliminate the signed-URL expiration failure mode.
-
