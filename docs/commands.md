@@ -28,6 +28,14 @@ This bot is primarily operated via Discord slash commands.
     - Prev/Next chapter (cross-book navigation supported)
     - Change book (group + book selector)
     - Jump to reference (modal)
+  - Human-friendly reference parsing:
+    - Ordinals: `1 sam 3`, `i sam 3`, `first samuel 3`
+    - Abbreviations: `ps 23`, `jn 3`, `1 cor 13:4-7`
+    - Punctuation/spacing: `1samuel 3`, `1-sam 3`, `ps23`
+    - Multi-word books: `song of songs 2:8`
+  - Ambiguity handling:
+    - If your book input is ambiguous (example: `sam 3`), the bot will ask you to confirm via a select menu.
+    - The bot will show what it resolved to (example: `Resolved: 1 Samuel (1SA) 3`).
 - `/plan ...`
   - Reading plans (see `docs/reading-plans.md`).
 - `/stats`

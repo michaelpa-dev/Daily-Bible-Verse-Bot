@@ -1,6 +1,8 @@
 const { translationApiUrl } = require('../config.js');
 const { getBookById } = require('../constants/books.js');
 const { logger } = require('../logger.js');
+const devBotLogs = require('./devBotLogs.js');
+const { isRetryableStatus, parseRetryAfterMs } = require('./httpRetryUtils.js');
 const { computeBackoffDelayMs, retryAsync } = require('./retry.js');
 
 const DEFAULT_TRANSLATION = 'web';
@@ -78,28 +80,6 @@ async function fetchWithTimeout(url, options = {}) {
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function isRetryableStatus(status) {
-  if (!Number.isFinite(status)) {
-    return false;
-  }
-
-  return status === 408 || status === 429 || (status >= 500 && status <= 599);
-}
-
-function parseRetryAfterMs(value) {
-  if (!value) {
-    return 0;
-  }
-
-  const seconds = Number(String(value).trim());
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return 0;
-  }
-
-  // Be polite; clamp to something reasonable so a single response cannot stall a command forever.
-  return Math.min(60_000, Math.floor(seconds * 1000));
 }
 
 async function fetchWithRetry(url, options = {}) {
@@ -190,7 +170,25 @@ async function fetchPassage(reference, options = {}) {
   const url = buildBibleApiUrl(normalizedReference, translation);
   logger.debug(`Fetching bible-api.com passage: ${url}`);
 
-  const response = await fetchWithRetry(url, options);
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await fetchWithRetry(url, options);
+  } catch (error) {
+    devBotLogs.logError('http.bibleApiWeb.fetch.error', error, {
+      translation,
+      reference: normalizedReference,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+
+  devBotLogs.logEvent('info', 'http.bibleApiWeb.fetch', {
+    translation,
+    reference: normalizedReference,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+  });
   if (!response.ok) {
     let detail = '';
     try {

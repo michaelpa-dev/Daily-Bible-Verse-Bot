@@ -1,13 +1,7 @@
+const { parsePositiveInt } = require('./numberParsing.js');
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function parsePositiveInt(value, defaultValue) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return defaultValue;
-  }
-  return Math.floor(parsed);
 }
 
 function computeBackoffDelayMs(attempt, options) {
@@ -73,7 +67,4 @@ module.exports = {
   computeBackoffDelayMs,
   retryAsync,
   sleep,
-  __private: {
-    parsePositiveInt,
-  },
 };

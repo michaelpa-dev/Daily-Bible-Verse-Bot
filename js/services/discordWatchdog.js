@@ -5,6 +5,7 @@ const {
   markWatchdogExit,
   markWatchdogOk,
 } = require('./runtimeHealth.js');
+const { parsePositiveInt } = require('./numberParsing.js');
 
 const DEFAULT_INTERVAL_MS = 30_000;
 const DEFAULT_STARTUP_GRACE_MS = 2 * 60_000;
@@ -22,17 +23,6 @@ function parseBoolean(value, defaultValue) {
     return false;
   }
   return defaultValue;
-}
-
-function parsePositiveInt(value, defaultValue) {
-  if (value == null || String(value).trim().length === 0) {
-    return defaultValue;
-  }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return defaultValue;
-  }
-  return Math.floor(parsed);
 }
 
 function resolveStatusName(status) {

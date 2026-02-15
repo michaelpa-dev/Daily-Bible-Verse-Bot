@@ -2,31 +2,12 @@ const axios = require('axios');
 const { logger } = require('../logger.js');
 const { bibleApiUrl, translationApiUrl, defaultTranslation } = require('../config.js');
 const { normalizeTranslationCode } = require('../constants/translations.js');
+const devBotLogs = require('./devBotLogs.js');
+const { isRetryableStatus, parseRetryAfterMs } = require('./httpRetryUtils.js');
 const { computeBackoffDelayMs, retryAsync } = require('./retry.js');
 
 const DEFAULT_HTTP_TIMEOUT_MS = 15000;
 const DEFAULT_HTTP_MAX_ATTEMPTS = 3;
-
-function isRetryableStatus(status) {
-  if (!Number.isFinite(status)) {
-    return false;
-  }
-
-  return status === 408 || status === 429 || (status >= 500 && status <= 599);
-}
-
-function parseRetryAfterMs(value) {
-  if (!value) {
-    return 0;
-  }
-
-  const seconds = Number(String(value).trim());
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return 0;
-  }
-
-  return Math.min(60_000, Math.floor(seconds * 1000));
-}
 
 async function axiosGetWithRetry(url, axiosConfig = {}, options = {}) {
   const timeoutMs = Number(options.timeoutMs || DEFAULT_HTTP_TIMEOUT_MS);
@@ -122,7 +103,24 @@ async function getVerseReference(passage) {
   const requestUrl = buildReferenceRequestUrl(passage);
 
   logger.debug(`Fetching verse reference from API: ${requestUrl}`);
-  const response = await axiosGetWithRetry(requestUrl, { responseType: 'json' });
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await axiosGetWithRetry(requestUrl, { responseType: 'json' });
+  } catch (error) {
+    devBotLogs.logError('http.labsBibleOrg.reference.error', error, {
+      passage,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+
+  devBotLogs.logEvent('info', 'http.labsBibleOrg.reference', {
+    passage,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+  });
+
   if (response.status !== 200) {
     return null;
   }
@@ -139,7 +137,25 @@ async function getTranslatedVerse(reference, translation) {
   const requestUrl = buildTranslationRequestUrl(reference, translation);
 
   logger.debug(`Fetching translated verse from API: ${requestUrl}`);
-  const response = await axiosGetWithRetry(requestUrl, { responseType: 'json' });
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await axiosGetWithRetry(requestUrl, { responseType: 'json' });
+  } catch (error) {
+    devBotLogs.logError('http.bibleApiCom.translate.error', error, {
+      reference,
+      translation,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+
+  devBotLogs.logEvent('info', 'http.bibleApiCom.translate', {
+    reference,
+    translation,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+  });
 
   if (response.status !== 200 || !response.data || !Array.isArray(response.data.verses)) {
     return null;

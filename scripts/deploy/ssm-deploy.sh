@@ -154,6 +154,12 @@ export BOT_TOKEN="${bot_token}"
 export DEPLOY_ENVIRONMENT="${environment}"
 export GIT_SHA="${git_sha:-unknown}"
 export RELEASE_TAG="${release_tag}"
+export DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Always-on #bot-logs in both canary + production. The bot's Discord log sink
+# is guarded by batching + a circuit breaker (`js/services/devBotLogs.js`),
+# so Discord posting failures won't crash the process.
+export DEV_LOGGING_ENABLED="${DEV_LOGGING_ENABLED:-true}"
 
 app_next="${deploy_root}/app.next"
 app_current="${deploy_root}/app"
@@ -236,6 +242,14 @@ mv "${app_next}" "${app_current}"
 if [[ -f "${app_prev}/docker-compose.prod.yml" ]]; then
   rollback_ready=1
   rollback_compose_file="${app_prev}/docker-compose.prod.yml"
+build_time=""
+if [[ -f "${app_current}/build/version.json" ]]; then
+  build_time="$(
+    python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('builtAt',''))" "${app_current}/build/version.json" 2>/dev/null || true
+  )"
+fi
+if [[ -n "${build_time}" ]]; then
+  export BUILD_TIME="${build_time}"
 fi
 
 echo "Starting service..."

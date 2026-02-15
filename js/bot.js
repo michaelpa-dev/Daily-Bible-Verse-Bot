@@ -23,6 +23,8 @@ const {
 const { runCommandSafely } = require('./services/commandRunner.js');
 const { startDiscordWatchdog } = require('./services/discordWatchdog.js');
 const { createHttpServer } = require('./api/httpServer.js');
+const devBotLogs = require('./services/devBotLogs.js');
+const { generateCorrelationId, runWithCorrelationId } = require('./services/correlation.js');
 const { handlePaginationInteraction } = require('./services/paginationInteractions.js');
 const { handleReadInteraction } = require('./services/readSessions.js');
 const { handlePlanInteraction } = require('./services/planInteractions.js');
@@ -31,9 +33,8 @@ const runtimeHealth = require('./services/runtimeHealth.js');
 const { sleep } = require('./services/retry.js');
 
 const STATUS_ROTATION_SCHEDULE = '*/5 * * * *';
-// Updating a Discord message every 5 seconds is extremely spammy and can contribute to rate limits.
-// Keep this low-frequency so failures don't cascade into instability.
-const BOT_STATUS_SCHEDULE = '*/5 * * * *';
+// Avoid updating Discord messages too frequently; this can trigger rate limits and cascade into failures.
+const BOT_STATUS_SCHEDULE = '*/15 * * * *';
 const DAILY_VERSE_SCHEDULE = '0 9 * * *';
 const DEFAULT_STATUS = 'the Word of God';
 const DELIVERY_CONCURRENCY = 5;
@@ -95,9 +96,13 @@ async function registerSlashCommands(guild) {
 }
 
 async function sendDailyVerseToSubscribedUsers() {
+  const start = Date.now();
   try {
     const subscribedUsers = await getSubscribedUsers();
     logger.info(`Sending daily verse to ${subscribedUsers.length} users`);
+    devBotLogs.logEvent('info', 'job.dailyVerse.start', {
+      subscribedUsers: subscribedUsers.length,
+    });
 
     const batch = [];
     for (const user of subscribedUsers) {
@@ -115,8 +120,16 @@ async function sendDailyVerseToSubscribedUsers() {
     if (batch.length > 0) {
       await Promise.allSettled(batch);
     }
+
+    devBotLogs.logEvent('info', 'job.dailyVerse.end', {
+      durationMs: Date.now() - start,
+      subscribedUsers: subscribedUsers.length,
+    });
   } catch (error) {
     logger.error('Error during daily verse delivery', error);
+    devBotLogs.logError('job.dailyVerse.error', error, {
+      durationMs: Date.now() - start,
+    });
   }
 }
 
@@ -155,6 +168,19 @@ client.once(Events.ClientReady, async () => {
   runtimeHealth.markDiscordReady(client);
   watchdog = startDiscordWatchdog(client);
 
+  // Dev Discord logging (best-effort). This should never crash startup.
+  try {
+    devBotLogs.start(client);
+    const validated = await devBotLogs.validateStartup();
+    if (!validated.ok) {
+      logger.warn(`Dev #bot-logs startup validation failed: ${validated.reason}`);
+      // If logs are failing, make sure the status message is still maintained so we can debug.
+      await upsertBotStatusMessage(client);
+    }
+  } catch (error) {
+    logger.warn(`Dev #bot-logs initialization failed: ${error?.message || error}`);
+  }
+
   try {
     const avatarPath = path.join(scriptDirectory, '../assets/bible_scripture_icon.png');
     if (fs.existsSync(avatarPath)) {
@@ -182,17 +208,20 @@ client.once(Events.ClientReady, async () => {
     await initializePlanScheduler(client);
   } catch (error) {
     logger.error('Failed to initialize reading plan scheduler', error);
+    devBotLogs.logError('planScheduler.init.error', error);
   }
 });
 
 client.on(Events.GuildCreate, async (guild) => {
   logger.info(`Joined guild ${guild.name} (${guild.id}), owner: ${guild.ownerId}`);
+  devBotLogs.logEvent('info', 'guild.join', { guildId: guild.id, guildName: guild.name });
   await registerSlashCommands(guild);
   await updateActiveGuilds(client);
 });
 
 client.on(Events.GuildDelete, async (guild) => {
   logger.info(`Removed from guild ${guild.name || 'unknown'} (${guild.id})`);
+  devBotLogs.logEvent('info', 'guild.leave', { guildId: guild.id, guildName: guild.name || 'unknown' });
   await updateActiveGuilds(client);
 });
 
@@ -215,55 +244,93 @@ client.on(Events.ShardResume, () => {
 client.on(Events.InteractionCreate, async (interaction) => {
   runtimeHealth.markInteraction(interaction);
 
-  if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
-    try {
-      const handled =
-        (interaction.isButton() ? await handlePaginationInteraction(interaction) : false) ||
-        (interaction.isButton() ? await handlePlanInteraction(interaction) : false) ||
-        (await handleReadInteraction(interaction));
-      if (handled) {
-        return;
+  const correlationId = generateCorrelationId();
+
+  await runWithCorrelationId(correlationId, async () => {
+    const baseFields = {
+      type: interaction.type,
+      userId: interaction.user?.id,
+      guildId: interaction.guildId || null,
+      channelId: interaction.channelId || null,
+    };
+
+    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
+      devBotLogs.logEvent('info', 'interaction.component', {
+        ...baseFields,
+        kind: interaction.isButton()
+          ? 'button'
+          : interaction.isStringSelectMenu()
+            ? 'select'
+            : 'modal',
+        customId: interaction.customId,
+      });
+
+      try {
+        const handled =
+          (interaction.isButton() ? await handlePaginationInteraction(interaction) : false) ||
+          (interaction.isButton() ? await handlePlanInteraction(interaction) : false) ||
+          (await handleReadInteraction(interaction));
+        if (handled) {
+          return;
+        }
+      } catch (error) {
+        logger.error('Component interaction handler failed', error);
+        devBotLogs.logError('interaction.component.error', error, {
+          ...baseFields,
+          customId: interaction.customId,
+        });
+        // Avoid throwing; fall through so Discord sees an error response.
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: 'An error occurred handling that interaction.', ephemeral: true });
+        }
       }
-    } catch (error) {
-      logger.error('Component interaction handler failed', error);
-      // Avoid throwing; fall through so Discord sees an error response.
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'An error occurred handling that interaction.', ephemeral: true });
-      }
+
       return;
     }
-  }
 
-  if (!interaction.isChatInputCommand()) {
-    return;
-  }
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
 
-  const command = client.commands.get(interaction.commandName);
-  logger.info(
-    `Slash command received: ${interaction.commandName}, guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
-  );
-
-  if (!command) {
-    logger.warn(`No command handler found for: ${interaction.commandName}`);
-    return;
-  }
-
-  const startedAt = Date.now();
-  const result = await runCommandSafely(interaction, command);
-  const durationMs = typeof result.durationMs === 'number' ? result.durationMs : Date.now() - startedAt;
-  if (result.ok) {
+    const command = client.commands.get(interaction.commandName);
     logger.info(
-      `Slash command succeeded: ${interaction.commandName} (${durationMs}ms), guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
+      `Slash command received: ${interaction.commandName}, guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
     );
-  } else {
-    logger.warn(
-      `Slash command failed: ${interaction.commandName} (${durationMs}ms), guild: ${interaction.guildId || 'DM'}, user: ${interaction.user.id}`
-    );
-  }
+
+    devBotLogs.logEvent('info', 'command.start', {
+      ...baseFields,
+      command: interaction.commandName,
+    });
+
+    if (!command) {
+      logger.warn(`No command handler found for: ${interaction.commandName}`);
+      devBotLogs.logEvent('warn', 'command.missing', {
+        ...baseFields,
+        command: interaction.commandName,
+      });
+      return;
+    }
+
+    const result = await runCommandSafely(interaction, command, {
+      logger,
+      logCommandErrorFn: logCommandError,
+      friendlyMessage: 'An error occurred while executing this command.',
+    });
+
+    devBotLogs.logEvent(result.ok ? 'info' : 'warn', 'command.end', {
+      ...baseFields,
+      command: interaction.commandName,
+      ok: result.ok,
+      durationMs: result.durationMs,
+    });
+  });
 });
 
-async function shutdown() {
+async function shutdown(signal = 'shutdown') {
   try {
+    devBotLogs.logEvent('info', 'bot.shutdown', { signal });
+    await devBotLogs.flush().catch(() => null);
+    devBotLogs.stop();
     watchdog?.stop?.();
     client.destroy();
     if (httpServer) {
@@ -316,12 +383,12 @@ runBot().catch((error) => {
 });
 
 process.once('SIGINT', async () => {
-  await shutdown();
+  await shutdown('SIGINT');
   process.exit(0);
 });
 
 process.once('SIGTERM', async () => {
-  await shutdown();
+  await shutdown('SIGTERM');
   process.exit(0);
 });
 
