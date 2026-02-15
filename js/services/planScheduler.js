@@ -115,7 +115,7 @@ async function postPlanTick(client, planId, options = {}) {
       if (task) {
         try {
           task.stop();
-        } catch (error) {
+        } catch (_error) {
           // ignore
         }
         tasks.delete(plan.id);

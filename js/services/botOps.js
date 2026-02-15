@@ -16,7 +16,6 @@ const BOT_STATUS_MARKER = '[dbvb-status-message]';
 const BOT_STATUS_TITLE = 'Daily Bible Verse Bot Status';
 const DEFAULT_ISSUE_TRACKER_URL =
   'https://github.com/michaelpa-dev/Daily-Bible-Verse-Bot/issues/new';
-const EMBED_FIELD_VALUE_LIMIT = 1024;
 
 // Discord embed limits (v14) that matter for runtime safety:
 // - field.value max length: 1024
@@ -329,7 +328,7 @@ function buildErrorLogPayload({ context, userTag, commandName, origin, error }) 
       );
 
     return { embeds: [embed] };
-  } catch (buildError) {
+  } catch (_buildError) {
     // Never allow operational logging to crash the bot.
     const fallback = truncateText(
       `Bot error: ${context || 'runtime'} - ${commandName || 'N/A'} - ${
