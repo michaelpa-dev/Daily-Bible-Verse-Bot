@@ -78,8 +78,6 @@ test('resolveBook does not auto-resolve impossible ordinals', () => {
 
 test('resolveBook does not auto-resolve ordinals on non-ordinal books', () => {
   const result = resolveBook('1 genesis');
-  assert.notEqual(result.kind, 'resolved');
-
-  const ids = result.candidates.map((candidate) => candidate.bookId);
-  assert.ok(ids.includes('GEN'));
+  assert.equal(result.kind, 'resolved');
+  assert.equal(result.bookId, 'GEN');
 });

@@ -30,7 +30,10 @@ const AMBIGUOUS_ALIAS_SCORE = 0.86;
 // Scoring penalties used when a user provides an ordinal (1/2/3) and it doesn't
 // match the candidate book.
 const ORDINAL_MISMATCH_PENALTY = 0.35;
-const ORDINAL_ON_NON_ORDINAL_BOOK_PENALTY = 0.15;
+// Users sometimes accidentally prefix a non-ordinal book with "1" (example: "1 genesis").
+// We penalize this slightly so "1 john" still prefers 1 John over John, but not so much
+// that it drowns out the actual book name.
+const ORDINAL_ON_NON_ORDINAL_BOOK_PENALTY = 0.92;
 
 let cachedAliasIndex = null;
 
@@ -263,6 +266,7 @@ function resolveBook(input, options = {}) {
   const normalizedInput = normalizeBookQuery(input);
   const tokens = tokenize(normalizedInput);
   const inputOrdinal = parseLeadingOrdinal(tokens);
+  const normalizedWithoutOrdinal = inputOrdinal ? tokens.slice(1).join(' ') : '';
 
   if (!normalizedInput) {
     return {
@@ -325,6 +329,12 @@ function resolveBook(input, options = {}) {
         continue;
       }
       best = Math.max(best, scoreNormalizedQuery(normalizedInput, normalizedCandidate));
+      if (normalizedWithoutOrdinal && !bookOrdinal) {
+        // If the candidate is not an ordinal book, allow the input to match without the leading
+        // ordinal token ("1 genesis" -> "genesis"). We'll apply a slight penalty below so
+        // ordinal books still win when the ordinal actually matters (example: "1 john").
+        best = Math.max(best, scoreNormalizedQuery(normalizedWithoutOrdinal, normalizedCandidate));
+      }
       if (best >= 1) {
         break;
       }
