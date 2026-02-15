@@ -53,7 +53,12 @@ function pickPlanDefaults(planType) {
   }
 
   if (planType === 'gospels-30') {
-    return { scope: 'SpecificBooks', books: ['MAT', 'MRK', 'LUK', 'JHN'], paceType: 'chapters', paceValue: 3 };
+    return {
+      scope: 'SpecificBooks',
+      books: ['MAT', 'MRK', 'LUK', 'JHN'],
+      paceType: 'chapters',
+      paceValue: 3,
+    };
   }
 
   if (planType === 'new-testament-90') {
@@ -72,7 +77,9 @@ function resolvePace(options) {
   const versesPerDay = options.versesPerDay;
   const minutesPerDay = options.minutesPerDay;
 
-  const chosen = [chaptersPerDay != null, versesPerDay != null, minutesPerDay != null].filter(Boolean).length;
+  const chosen = [chaptersPerDay != null, versesPerDay != null, minutesPerDay != null].filter(
+    Boolean
+  ).length;
   if (chosen > 1) {
     throw new Error('Choose only one pace option: chaptersPerDay, versesPerDay, or minutesPerDay.');
   }
@@ -98,7 +105,9 @@ async function buildTodayReadingPages(plan, dayIndex) {
   const lines = [];
   for (const ref of refs) {
     lines.push(`__${buildReferenceLabel(ref)}__`);
-    const passage = await fetchPassageForBookChapter(ref.bookId, ref.chapter, ref.verseSpec, { translation: 'web' });
+    const passage = await fetchPassageForBookChapter(ref.bookId, ref.chapter, ref.verseSpec, {
+      translation: 'web',
+    });
     lines.push(...formatPassageLines(passage));
   }
 
@@ -114,11 +123,14 @@ function buildPlanSummaryEmbed(plan, options = {}) {
       { name: 'Status', value: plan.status, inline: true },
       { name: 'Day', value: String(plan.dayIndex + 1), inline: true },
       { name: 'Timezone', value: plan.timezone, inline: true },
-      { name: 'Post Time', value: plan.postTime, inline: true },
+      { name: 'Post Time', value: plan.postTime, inline: true }
     );
 
   if (plan.ownerType === 'guild') {
-    embed.addFields({ name: 'Channel', value: plan.channelId ? `<#${plan.channelId}>` : '(not set)' });
+    embed.addFields({
+      name: 'Channel',
+      value: plan.channelId ? `<#${plan.channelId}>` : '(not set)',
+    });
   }
 
   if (options.note) {
@@ -133,9 +145,7 @@ module.exports = {
     .setName('plan')
     .setDescription('Reading plan system')
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName('list')
-        .setDescription('List available plan templates')
+      subcommand.setName('list').setDescription('List available plan templates')
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -151,7 +161,7 @@ module.exports = {
               { name: 'Gospels (30 days)', value: 'gospels-30' },
               { name: 'Psalms + Proverbs (daily)', value: 'psalms-proverbs' },
               { name: 'New Testament (90 days)', value: 'new-testament-90' },
-              { name: 'Custom', value: 'custom' },
+              { name: 'Custom', value: 'custom' }
             )
         )
         .addStringOption((option) =>
@@ -163,7 +173,7 @@ module.exports = {
               { name: 'Old Testament', value: 'OT' },
               { name: 'New Testament', value: 'NT' },
               { name: 'Both', value: 'Both' },
-              { name: 'Specific Books', value: 'SpecificBooks' },
+              { name: 'Specific Books', value: 'SpecificBooks' }
             )
         )
         .addStringOption((option) =>
@@ -223,29 +233,19 @@ module.exports = {
         )
     )
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName('status')
-        .setDescription('Show your current plan status')
+      subcommand.setName('status').setDescription('Show your current plan status')
     )
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName('today')
-        .setDescription('Show today’s reading (with pagination)')
+      subcommand.setName('today').setDescription('Show today’s reading (with pagination)')
     )
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName('pause')
-        .setDescription('Pause the current plan')
+      subcommand.setName('pause').setDescription('Pause the current plan')
     )
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName('resume')
-        .setDescription('Resume the current plan')
+      subcommand.setName('resume').setDescription('Resume the current plan')
     )
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName('stop')
-        .setDescription('Stop the current plan')
+      subcommand.setName('stop').setDescription('Stop the current plan')
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -268,7 +268,9 @@ module.exports = {
     const ownerType = interaction.guildId ? 'guild' : 'user';
     const ownerId = interaction.guildId ? interaction.guildId : interaction.user.id;
 
-    logger.info(`Slash command /plan ${subcommand} called by ${interaction.user.id} ownerType=${ownerType}`);
+    logger.info(
+      `Slash command /plan ${subcommand} called by ${interaction.user.id} ownerType=${ownerType}`
+    );
 
     try {
       if (subcommand === 'list') {
@@ -300,21 +302,23 @@ module.exports = {
         const postTime = interaction.options.getString('post_time') || DEFAULT_POST_TIME;
 
         const startDateInput = interaction.options.getString('start_date');
-        const startDate = startDateInput && /^\d{4}-\d{2}-\d{2}$/.test(startDateInput)
-          ? startDateInput
-          : formatLocalDate(timezone);
+        const startDate =
+          startDateInput && /^\d{4}-\d{2}-\d{2}$/.test(startDateInput)
+            ? startDateInput
+            : formatLocalDate(timezone);
 
         const defaults = pickPlanDefaults(planType);
         const scopeOverride = interaction.options.getString('scope');
-        const scope = planType === 'custom'
-          ? (scopeOverride || defaults.scope)
-          : defaults.scope;
+        const scope = planType === 'custom' ? scopeOverride || defaults.scope : defaults.scope;
 
         const booksRaw = interaction.options.getString('books');
         const parsedBooks = scope === 'SpecificBooks' ? parseBooksList(booksRaw) : [];
-        const books = scope === 'SpecificBooks'
-          ? (parsedBooks.length > 0 ? parsedBooks : defaults.books)
-          : defaults.books;
+        const books =
+          scope === 'SpecificBooks'
+            ? parsedBooks.length > 0
+              ? parsedBooks
+              : defaults.books
+            : defaults.books;
 
         const paceOverride = resolvePace({
           chaptersPerDay: interaction.options.getInteger('chapters_per_day'),
@@ -323,9 +327,10 @@ module.exports = {
         });
 
         const pace = paceOverride || { paceType: defaults.paceType, paceValue: defaults.paceValue };
-        const channelId = ownerType === 'guild'
-          ? (interaction.options.getChannel('channel')?.id || interaction.channelId)
-          : null;
+        const channelId =
+          ownerType === 'guild'
+            ? interaction.options.getChannel('channel')?.id || interaction.channelId
+            : null;
 
         const plan = await upsertPlan({
           ownerType,
@@ -343,9 +348,10 @@ module.exports = {
 
         await refreshPlanSchedules(interaction.client);
 
-        const note = ownerType === 'guild'
-          ? `Daily posts will go to <#${plan.channelId}> at ${plan.postTime} (${plan.timezone}).`
-          : `Daily DMs will be sent at ${plan.postTime} (${plan.timezone}).`;
+        const note =
+          ownerType === 'guild'
+            ? `Daily posts will go to <#${plan.channelId}> at ${plan.postTime} (${plan.timezone}).`
+            : `Daily DMs will be sent at ${plan.postTime} (${plan.timezone}).`;
 
         await interaction.reply({
           embeds: [buildPlanSummaryEmbed(plan, { note })],
@@ -404,7 +410,10 @@ module.exports = {
       if (subcommand === 'pause') {
         await setPlanStatus(plan.id, 'paused');
         await refreshPlanSchedules(interaction.client);
-        await interaction.reply({ embeds: [buildPlanSummaryEmbed({ ...plan, status: 'paused' })], ephemeral: true });
+        await interaction.reply({
+          embeds: [buildPlanSummaryEmbed({ ...plan, status: 'paused' })],
+          ephemeral: true,
+        });
         return;
       }
 
@@ -452,4 +461,3 @@ module.exports = {
     }
   },
 };
-

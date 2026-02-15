@@ -36,6 +36,9 @@ function parseOffset(query) {
 
 function createHttpServer(options = {}) {
   const fetchImpl = options.fetchImpl;
+  const getHealthSnapshot =
+    typeof options.getHealthSnapshot === 'function' ? options.getHealthSnapshot : null;
+  const isReady = typeof options.isReady === 'function' ? options.isReady : () => false;
 
   return http.createServer(async (req, res) => {
     const method = String(req.method || 'GET').toUpperCase();
@@ -49,6 +52,13 @@ function createHttpServer(options = {}) {
 
     if (pathname === '/healthz') {
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (pathname === '/readyz') {
+      const ready = Boolean(isReady());
+      const snapshot = getHealthSnapshot ? getHealthSnapshot() : null;
+      sendJson(res, ready ? 200 : 503, { ok: ready, ready, snapshot });
       return;
     }
 
@@ -76,4 +86,3 @@ function createHttpServer(options = {}) {
 module.exports = {
   createHttpServer,
 };
-

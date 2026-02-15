@@ -31,11 +31,9 @@ function normalizeRandomScopeFromPathSegment(segment) {
 async function handleRandomWebVerse(scope, options = {}) {
   const normalizedScope = normalizeRandomScopeFromPathSegment(scope);
   if (!normalizedScope) {
-    return buildErrorResponse(
-      400,
-      'Invalid scope. Use OT, NT, or a WEB book id (ex: JHN).',
-      { scope }
-    );
+    return buildErrorResponse(400, 'Invalid scope. Use OT, NT, or a WEB book id (ex: JHN).', {
+      scope,
+    });
   }
 
   // Deterministic override for tests: pass offset.
@@ -77,4 +75,3 @@ module.exports = {
   handleRandomWebVerse,
   normalizeRandomScopeFromPathSegment,
 };
-

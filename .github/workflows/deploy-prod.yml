@@ -3,7 +3,7 @@ name: Deploy Production (EC2 via SSM)
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   release:
     types:
       - published
@@ -324,17 +324,36 @@ jobs:
         run: |
           set -euo pipefail
 
-          set +e
-          aws ssm wait command-executed --region "${AWS_REGION}" --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}"
-          wait_exit=$?
-          set -e
+          status=""
+          for attempt in $(seq 1 120); do
+            status="$(aws ssm get-command-invocation \
+              --region "${AWS_REGION}" \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${INSTANCE_ID}" \
+              --query "Status" \
+              --output text 2>/dev/null || true)"
 
-          status="$(aws ssm get-command-invocation \
-            --region "${AWS_REGION}" \
-            --command-id "${COMMAND_ID}" \
-            --instance-id "${INSTANCE_ID}" \
-            --query "Status" \
-            --output text)"
+            if [ -z "${status}" ] || [ "${status}" = "None" ] || [ "${status}" = "null" ]; then
+              echo "Waiting for SSM invocation to appear (attempt ${attempt}/120)..."
+              sleep 5
+              continue
+            fi
+
+            echo "SSM status: ${status} (attempt ${attempt}/120)"
+            case "${status}" in
+              Success|Failed|Cancelled|TimedOut|Undeliverable|Terminated)
+                break
+                ;;
+              *)
+                sleep 10
+                ;;
+            esac
+          done
+
+          if [ "${status}" = "Pending" ] || [ "${status}" = "InProgress" ] || [ "${status}" = "Delayed" ]; then
+            echo "SSM command did not complete within timeout; last status: ${status}" >&2
+            exit 1
+          fi
 
           stdout="$(aws ssm get-command-invocation \
             --region "${AWS_REGION}" \
@@ -356,7 +375,7 @@ jobs:
             echo "${stderr}" >&2
           fi
 
-          if [ "${status}" != "Success" ] || [ "${wait_exit}" -ne 0 ]; then
+          if [ "${status}" != "Success" ]; then
             exit 1
           fi
 

@@ -19,7 +19,7 @@ function toJsonArray(value) {
   try {
     const parsed = JSON.parse(String(value));
     return Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : [];
-  } catch (error) {
+  } catch {
     return [];
   }
 }

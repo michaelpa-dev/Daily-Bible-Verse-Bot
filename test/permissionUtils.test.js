@@ -1,9 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {
-  isOwnerOrMaintainer,
-  memberHasRoleByName,
-} = require('../js/services/permissionUtils.js');
+const { isOwnerOrMaintainer, memberHasRoleByName } = require('../js/services/permissionUtils.js');
 
 function buildMemberWithRoles(roleNames) {
   const roles = roleNames.map((name) => ({ name }));

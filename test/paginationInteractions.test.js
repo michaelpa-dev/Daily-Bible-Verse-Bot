@@ -9,7 +9,7 @@ test('createPaginatedMessage preserves extra components for single-page messages
     new ButtonBuilder()
       .setCustomId('unit-test-extra')
       .setLabel('Extra')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Primary)
   );
 
   const { components } = createPaginatedMessage({

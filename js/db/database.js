@@ -6,7 +6,7 @@ const { normalizeTranslationCode } = require('../constants/translations.js');
 let DatabaseSync;
 try {
   ({ DatabaseSync } = require('node:sqlite'));
-} catch (error) {
+} catch {
   throw new Error(
     'SQLite persistence requires a Node.js runtime with support for node:sqlite.'
   );

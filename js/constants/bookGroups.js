@@ -38,8 +38,22 @@ const GROUPS = [
   },
   {
     id: 'nt_paul',
-    label: 'NT: Paul\'s Letters',
-    bookIds: ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'],
+    label: "NT: Paul's Letters",
+    bookIds: [
+      'ROM',
+      '1CO',
+      '2CO',
+      'GAL',
+      'EPH',
+      'PHP',
+      'COL',
+      '1TH',
+      '2TH',
+      '1TI',
+      '2TI',
+      'TIT',
+      'PHM',
+    ],
   },
   {
     id: 'nt_general',
@@ -73,7 +87,9 @@ function getGroupById(groupId) {
 }
 
 function getGroupIdForBook(bookId) {
-  const normalized = String(bookId || '').trim().toUpperCase();
+  const normalized = String(bookId || '')
+    .trim()
+    .toUpperCase();
   if (!normalized) {
     return null;
   }
@@ -96,4 +112,3 @@ module.exports = {
   listBooksInCanonOrder,
   listGroups,
 };
-

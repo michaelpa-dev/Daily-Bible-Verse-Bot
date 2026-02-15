@@ -1,10 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { logger } = require('../logger.js');
 const { addCommandExecution } = require('../db/statsDB.js');
-const {
-  setUserTranslation,
-  isSubscribed,
-} = require('../db/subscribeDB.js');
+const { setUserTranslation, isSubscribed } = require('../db/subscribeDB.js');
 const {
   getTranslationLabel,
   normalizeTranslationCode,

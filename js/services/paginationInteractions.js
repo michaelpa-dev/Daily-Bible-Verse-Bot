@@ -1,9 +1,4 @@
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-} = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 const {
   createPaginationSession,
@@ -37,13 +32,11 @@ function buildPaginationEmbed(session) {
   const pageIndex = Math.min(Math.max(session.pageIndex, 0), total - 1);
   const page = session.pages[pageIndex];
 
-  const embed = new EmbedBuilder()
-    .setDescription(page)
-    .setFooter({
-      text: session.footer
-        ? `${session.footer} • Page ${pageIndex + 1}/${total}`
-        : `Page ${pageIndex + 1}/${total}`,
-    });
+  const embed = new EmbedBuilder().setDescription(page).setFooter({
+    text: session.footer
+      ? `${session.footer} • Page ${pageIndex + 1}/${total}`
+      : `Page ${pageIndex + 1}/${total}`,
+  });
 
   if (session.title) {
     embed.setTitle(session.title);
@@ -67,7 +60,7 @@ function buildPaginationComponents(session) {
       new ButtonBuilder()
         .setCustomId(buildCustomId(session.id, 'close'))
         .setLabel('Close')
-        .setStyle(ButtonStyle.Danger),
+        .setStyle(ButtonStyle.Danger)
     );
     return [row, ...extras];
   }
@@ -89,7 +82,7 @@ function buildPaginationComponents(session) {
     new ButtonBuilder()
       .setCustomId(buildCustomId(session.id, 'close'))
       .setLabel('Close')
-      .setStyle(ButtonStyle.Danger),
+      .setStyle(ButtonStyle.Danger)
   );
 
   return [row, ...extras];

@@ -11,9 +11,7 @@ const PROJECT_MODULES = [
 ];
 
 function createTempDatabaseSandbox() {
-  const rootDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'daily-bible-verse-bot-test-')
-  );
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'daily-bible-verse-bot-test-'));
   const dbPath = path.join(rootDir, 'bot.sqlite');
   const legacyDir = path.join(rootDir, 'legacy');
   fs.mkdirSync(legacyDir, { recursive: true });
@@ -29,7 +27,7 @@ function clearProjectModuleCache() {
   for (const modulePath of PROJECT_MODULES) {
     try {
       delete require.cache[require.resolve(modulePath)];
-    } catch (error) {
+    } catch {
       // Ignore modules that are not in cache yet.
     }
   }

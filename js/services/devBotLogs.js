@@ -1,6 +1,4 @@
-const {
-  ChannelType,
-} = require('discord.js');
+const { ChannelType } = require('discord.js');
 
 const { logger } = require('../logger.js');
 const { TARGET_DEV_GUILD_ID, CHANNEL_NAMES } = require('../constants/devServerSpec.js');
@@ -42,7 +40,9 @@ function parsePositiveInt(value, defaultValue) {
 }
 
 function parseLogLevel(value, defaultLevel) {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   if (Object.prototype.hasOwnProperty.call(LEVELS, normalized)) {
     return normalized;
   }
@@ -58,10 +58,7 @@ function sanitizeValue(value) {
     return '';
   }
 
-  return String(value)
-    .replace(/\r/g, '')
-    .replace(/\n/g, '\\n')
-    .slice(0, 500);
+  return String(value).replace(/\r/g, '').replace(/\n/g, '\\n').slice(0, 500);
 }
 
 function toIso(value) {
@@ -79,11 +76,17 @@ function buildConfig(environment = process.env) {
     .trim()
     .toLowerCase();
 
-  const enabledDefault = runtimeEnvironment === 'canary';
+  // #bot-logs must be always-on in both canary + production. Keep it opt-in for
+  // local development unless explicitly enabled, to avoid noisy failures when
+  // the bot isn't present in the dev guild.
+  const enabledDefault = runtimeEnvironment === 'canary' || runtimeEnvironment === 'production';
   const enabled = parseBoolean(environment.DEV_LOGGING_ENABLED, enabledDefault);
 
-  const defaultLevel = runtimeEnvironment === 'production' ? 'warn' : 'info';
-  const level = parseLogLevel(environment.DEV_LOG_LEVEL, defaultLevel);
+  // Prefer DEV_LOG_LEVEL for the Discord sink, but fall back to LOG_LEVEL so
+  // operators only have to learn one knob in simple setups.
+  const defaultLevel = 'info';
+  const configuredLevel = environment.DEV_LOG_LEVEL ?? environment.LOG_LEVEL;
+  const level = parseLogLevel(configuredLevel, defaultLevel);
 
   return {
     enabled,
@@ -123,6 +126,7 @@ const state = {
   disabledUntilMs: 0,
   droppedCount: 0,
   lastWarningAtMs: 0,
+  lastEnqueueWarningAtMs: 0,
   // Coalescing
   lastEnqueuedKey: null,
   lastEnqueuedAtMs: 0,
@@ -154,7 +158,8 @@ async function resolveLogsChannel() {
       }
     }
 
-    const guild = client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
+    const guild =
+      client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
     if (!guild) {
       state.resolvingChannel = null;
       return null;
@@ -322,9 +327,10 @@ function registerFailure(error) {
   // Throttle warning spam to local logs.
   if (now - state.lastWarningAtMs > 60_000) {
     state.lastWarningAtMs = now;
-    const until = state.disabledUntilMs > now
-      ? `; circuit open for ${Math.round((state.disabledUntilMs - now) / 1000)}s`
-      : '';
+    const until =
+      state.disabledUntilMs > now
+        ? `; circuit open for ${Math.round((state.disabledUntilMs - now) / 1000)}s`
+        : '';
     logger.warn(
       `Failed to post to dev #bot-logs (${state.consecutiveFailures} consecutive failures)${until}: ${error?.message || error}`
     );
@@ -490,14 +496,27 @@ function getHealth() {
 }
 
 function logEvent(level, event, fields, message) {
-  enqueue({
-    timestamp: toIso(),
-    level: String(level || 'info').toLowerCase(),
-    event: String(event || 'event').trim() || 'event',
-    message: message != null ? String(message) : null,
-    fields: fields && typeof fields === 'object' ? fields : null,
-    correlationId: getCorrelationId(),
-  });
+  try {
+    enqueue({
+      timestamp: toIso(),
+      level: String(level || 'info').toLowerCase(),
+      event: String(event || 'event').trim() || 'event',
+      message: message != null ? String(message) : null,
+      fields: fields && typeof fields === 'object' ? fields : null,
+      correlationId: getCorrelationId(),
+    });
+  } catch (error) {
+    // Logging must never crash the bot. If this ever happens, degrade to local logs and move on.
+    const now = Date.now();
+    if (now - state.lastEnqueueWarningAtMs > 60_000) {
+      state.lastEnqueueWarningAtMs = now;
+      try {
+        logger.warn('devBotLogs.logEvent failed; continuing without Discord sink.', error);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 function logError(event, error, fields) {

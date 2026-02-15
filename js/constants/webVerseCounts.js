@@ -90,9 +90,7 @@ function pickRandomVerseFromBook(bookId, options = {}) {
     throw new Error(`Unknown bookId or missing verse counts: ${normalizedBookId}`);
   }
 
-  const offset = options.offset != null
-    ? Number(options.offset)
-    : crypto.randomInt(0, totalVerses);
+  const offset = options.offset != null ? Number(options.offset) : crypto.randomInt(0, totalVerses);
 
   if (!Number.isFinite(offset) || offset < 0 || offset >= totalVerses) {
     throw new Error(`Invalid verse offset ${options.offset} for book ${normalizedBookId}`);
@@ -121,7 +119,9 @@ function pickRandomVerseFromBook(bookId, options = {}) {
 }
 
 function pickRandomVerseFromTestament(testament, options = {}) {
-  const normalizedTestament = String(testament || '').trim().toUpperCase();
+  const normalizedTestament = String(testament || '')
+    .trim()
+    .toUpperCase();
   if (normalizedTestament !== 'OT' && normalizedTestament !== 'NT') {
     throw new Error(`Invalid testament: ${testament}`);
   }
@@ -132,9 +132,7 @@ function pickRandomVerseFromTestament(testament, options = {}) {
     throw new Error(`Missing verse totals for ${normalizedTestament}`);
   }
 
-  const offset = options.offset != null
-    ? Number(options.offset)
-    : crypto.randomInt(0, totalVerses);
+  const offset = options.offset != null ? Number(options.offset) : crypto.randomInt(0, totalVerses);
 
   if (!Number.isFinite(offset) || offset < 0 || offset >= totalVerses) {
     throw new Error(`Invalid verse offset ${options.offset} for ${normalizedTestament}`);
@@ -179,4 +177,3 @@ module.exports = {
   pickRandomVerseFromScope,
   pickRandomVerseFromTestament,
 };
-

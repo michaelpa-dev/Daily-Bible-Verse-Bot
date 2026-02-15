@@ -1,14 +1,8 @@
-const {
-  ChannelType,
-  EmbedBuilder,
-} = require('discord.js');
+const { ChannelType, EmbedBuilder } = require('discord.js');
 const { logger } = require('../logger.js');
 const { getBuildInfo } = require('./buildInfo.js');
 const { issueTrackerUrl } = require('../config.js');
-const {
-  CHANNEL_NAMES,
-  TARGET_DEV_GUILD_ID,
-} = require('../constants/devServerSpec.js');
+const { CHANNEL_NAMES, TARGET_DEV_GUILD_ID } = require('../constants/devServerSpec.js');
 const devBotLogs = require('./devBotLogs.js');
 const { formatDiscordTimestamp } = require('./discordFormat.js');
 
@@ -54,23 +48,21 @@ function normalizeIssueTrackerUrl(rawUrl) {
       parsed.pathname = `${parsed.pathname}/new`;
     }
     return parsed.toString();
-  } catch (error) {
+  } catch {
     return DEFAULT_ISSUE_TRACKER_URL;
   }
 }
 
-function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, stackSnippet }) {
+function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, correlationId }) {
   const baseUrl = normalizeIssueTrackerUrl(issueTrackerUrl);
   const issueUrl = new URL(baseUrl);
-  const title = truncateText(
-    `[Bot Error] ${context || 'runtime'} - ${commandName || 'N/A'}`,
-    120
-  );
+  const title = truncateText(`[Bot Error] ${context || 'runtime'} - ${commandName || 'N/A'}`, 120);
   const body = [
     '### Error context',
     `- Context: ${context || 'runtime'}`,
     `- Command: ${commandName || 'N/A'}`,
     `- User: ${userTag || 'N/A'}`,
+    correlationId ? `- CorrelationId: ${correlationId}` : null,
     `- Timestamp (UTC): ${new Date().toISOString()}`,
     '',
     '### Summary',
@@ -80,7 +72,9 @@ function buildIssueCreationUrl({ context, commandName, userTag, errorSummary, st
     '_See Discord #bot-logs or container logs for stack trace._',
     '',
     '_Created from Discord #bot-logs._',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   issueUrl.searchParams.set('title', title);
   issueUrl.searchParams.set('body', body);
@@ -135,7 +129,6 @@ async function getBotLogsChannel(client, guildId = getDefaultDevGuildId()) {
       return channel;
     }
   }
-
   const guild = getGuildFromClient(client, guildId);
   if (!guild) {
     return null;
@@ -237,12 +230,18 @@ async function upsertBotStatusMessage(client, guildId = getDefaultDevGuildId()) 
 
   const statusChannel = await getBotStatusChannel(client, guildId);
   if (!statusChannel) {
-    devBotLogs.logEvent('warn', 'statusMessage.upsert.skip', { guildId, reason: 'status_channel_not_found' });
+    devBotLogs.logEvent('warn', 'statusMessage.upsert.skip', {
+      guildId,
+      reason: 'status_channel_not_found',
+    });
     return null;
   }
 
   const messages = await statusChannel.messages.fetch({ limit: 50 }).catch((error) => {
-    devBotLogs.logError('statusMessage.upsert.fetch.error', error, { guildId, channelId: statusChannel.id });
+    devBotLogs.logError('statusMessage.upsert.fetch.error', error, {
+      guildId,
+      channelId: statusChannel.id,
+    });
     return null;
   });
   if (!messages) {
@@ -252,46 +251,64 @@ async function upsertBotStatusMessage(client, guildId = getDefaultDevGuildId()) 
   const existingMessage =
     messages.find(
       (message) =>
-        message.author.id === client.user.id && (
-          message.content.includes(BOT_STATUS_MARKER) ||
-          message.embeds.some((embed) =>
-            embed.title === BOT_STATUS_TITLE ||
-            embed.footer?.text === BOT_STATUS_MARKER
-          )
-        )
+        message.author.id === client.user.id &&
+        (message.content.includes(BOT_STATUS_MARKER) ||
+          message.embeds.some(
+            (embed) => embed.title === BOT_STATUS_TITLE || embed.footer?.text === BOT_STATUS_MARKER
+          ))
     ) || null;
 
   const nextEmbed = buildBotStatusEmbed(client);
   if (!existingMessage) {
     const sent = await statusChannel.send({ embeds: [nextEmbed] }).catch((error) => {
-      devBotLogs.logError('statusMessage.upsert.send.error', error, { guildId, channelId: statusChannel.id });
+      devBotLogs.logError('statusMessage.upsert.send.error', error, {
+        guildId,
+        channelId: statusChannel.id,
+      });
       return null;
     });
     if (sent) {
-      devBotLogs.logEvent('info', 'statusMessage.upsert.created', { guildId, channelId: statusChannel.id, messageId: sent.id });
+      devBotLogs.logEvent('info', 'statusMessage.upsert.created', {
+        guildId,
+        channelId: statusChannel.id,
+        messageId: sent.id,
+      });
     }
     return sent;
   }
 
-  const edited = await existingMessage.edit({
-    content: '',
-    embeds: [nextEmbed],
-  }).catch((error) => {
-    devBotLogs.logError('statusMessage.upsert.edit.error', error, { guildId, channelId: statusChannel.id, messageId: existingMessage.id });
-    return null;
-  });
+  const edited = await existingMessage
+    .edit({
+      content: '',
+      embeds: [nextEmbed],
+    })
+    .catch((error) => {
+      devBotLogs.logError('statusMessage.upsert.edit.error', error, {
+        guildId,
+        channelId: statusChannel.id,
+        messageId: existingMessage.id,
+      });
+      return null;
+    });
 
   if (edited) {
-    devBotLogs.logEvent('info', 'statusMessage.upsert.updated', { guildId, channelId: statusChannel.id, messageId: edited.id });
+    devBotLogs.logEvent('info', 'statusMessage.upsert.updated', {
+      guildId,
+      channelId: statusChannel.id,
+      messageId: edited.id,
+    });
   }
 
   return edited;
 }
 
-function buildErrorLogPayload({ context, userTag, commandName, error }) {
+function safeEmbedFieldValue(value) {
+  return truncateText(value, DISCORD_EMBED_FIELD_VALUE_MAX);
+}
+
+function buildErrorLogPayload({ context, userTag, commandName, origin, error }) {
   try {
-    const safeValue = (value) => truncateText(value, DISCORD_EMBED_FIELD_VALUE_MAX);
-    const errorSummary = safeValue(error?.message || String(error));
+    const errorSummary = safeEmbedFieldValue(error?.message || String(error));
     const stackSnippet = truncateText(
       error?.stack || 'No stack available',
       // Keep under 1024 once we add code fences.
@@ -316,16 +333,20 @@ function buildErrorLogPayload({ context, userTag, commandName, error }) {
       .setColor('#c0392b')
       .setTimestamp()
       .addFields(
-        { name: 'Context', value: safeValue(context || 'runtime'), inline: true },
-        { name: 'Command', value: safeValue(commandName || 'N/A'), inline: true },
-        { name: 'User', value: safeValue(userTag || 'N/A'), inline: true },
+        { name: 'Context', value: safeEmbedFieldValue(context || 'runtime'), inline: true },
+        { name: 'Command', value: safeEmbedFieldValue(commandName || 'N/A'), inline: true },
+        { name: 'User', value: safeEmbedFieldValue(userTag || 'N/A'), inline: true },
+        ...(origin ? [{ name: 'Origin', value: safeEmbedFieldValue(origin), inline: false }] : []),
         { name: 'Summary', value: errorSummary || 'Unknown error' },
-        { name: 'Stack', value: safeValue(`\`\`\`\n${stackSnippet}\n\`\`\``) },
-        { name: 'Issue', value: safeValue(`[Create GitHub issue](${normalizedIssueUrl})`) }
+        { name: 'Stack', value: safeEmbedFieldValue(`\`\`\`\n${stackSnippet}\n\`\`\``) },
+        {
+          name: 'Issue',
+          value: safeEmbedFieldValue(`[Create GitHub issue](${normalizedIssueUrl})`),
+        }
       );
 
     return { embeds: [embed] };
-  } catch (buildError) {
+  } catch (_buildError) {
     // Never allow operational logging to crash the bot.
     const fallback = truncateText(
       `Bot error: ${context || 'runtime'} - ${commandName || 'N/A'} - ${
@@ -368,14 +389,14 @@ async function sendBotLogMessage(client, guildId, payload) {
 
     if (now - logCircuit.lastWarningAtMs > 60_000) {
       logCircuit.lastWarningAtMs = now;
-      const until = logCircuit.disabledUntilMs > now
-        ? `; circuit open for ${Math.round((logCircuit.disabledUntilMs - now) / 1000)}s`
-        : '';
+      const until =
+        logCircuit.disabledUntilMs > now
+          ? `; circuit open for ${Math.round((logCircuit.disabledUntilMs - now) / 1000)}s`
+          : '';
       logger.warn(
         `Failed to send bot log message to Discord (${logCircuit.consecutiveFailures} consecutive failures)${until}: ${error?.message || error}`
       );
     }
-
     return false;
   }
 }
@@ -397,12 +418,21 @@ async function logCommandError(interaction, error, summary) {
 
   const userTag = `${interaction.user.username} (${interaction.user.id})`;
   const commandName = `/${interaction.commandName || 'unknown'}`;
-  return sendBotLogMessage(interaction.client, getDefaultDevGuildId(), buildErrorLogPayload({
-    context: summary || 'command',
-    userTag,
-    commandName,
-    error,
-  }));
+  const origin = interaction.guild
+    ? `guild=${interaction.guild.name} (${interaction.guildId}), channel=${interaction.channel?.name || interaction.channelId || 'unknown'}`
+    : `DM channel=${interaction.channelId || 'unknown'}`;
+
+  return sendBotLogMessage(
+    interaction.client,
+    getDefaultDevGuildId(),
+    buildErrorLogPayload({
+      context: summary || 'command',
+      userTag,
+      commandName,
+      origin,
+      error,
+    })
+  );
 }
 
 async function logRuntimeError(client, error, context = 'runtime') {
@@ -413,12 +443,16 @@ async function logRuntimeError(client, error, context = 'runtime') {
     return false;
   }
 
-  return sendBotLogMessage(client, getDefaultDevGuildId(), buildErrorLogPayload({
-    context,
-    userTag: 'N/A',
-    commandName: 'N/A',
-    error,
-  }));
+  return sendBotLogMessage(
+    client,
+    getDefaultDevGuildId(),
+    buildErrorLogPayload({
+      context,
+      userTag: 'N/A',
+      commandName: 'N/A',
+      error,
+    })
+  );
 }
 
 function buildBootstrapSummaryMessage(mode, report) {
@@ -468,4 +502,7 @@ module.exports = {
   sendBotLogMessage,
   truncateText,
   upsertBotStatusMessage,
+  __private: {
+    buildErrorLogPayload,
+  },
 };

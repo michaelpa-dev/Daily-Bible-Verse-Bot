@@ -17,6 +17,7 @@ Then:
   - Syncs `BOT_TOKEN` from GitHub environment secrets into SSM Parameter Store (SecureString)
   - Resolves a short-lived signed GitHub download URL for the release asset (so private repos work without putting GitHub tokens on EC2)
   - Runs the deploy via SSM
+  - The instance-side deploy script will attempt an automatic rollback if the new container fails to start
 
 Auto-stop:
 
@@ -71,6 +72,8 @@ Common checks:
   - The container is named `daily-bible-verse-bot`.
   - You can inspect recent logs from SSM by running a command like:
     - `docker logs --tail 200 daily-bible-verse-bot`
+  - If HTTP API is enabled, you can inspect readiness locally on the instance:
+    - `curl -fsS http://127.0.0.1:3000/readyz | jq`
 
 - SSM not working:
   - Confirm `amazon-ssm-agent` is running and the instance has its IAM instance profile.
