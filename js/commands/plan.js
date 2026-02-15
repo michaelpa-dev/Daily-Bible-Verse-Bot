@@ -330,19 +330,10 @@ module.exports = {
     await addCommandExecution();
     const subcommand = interaction.options.getSubcommand();
 
-    const requestedTarget = interaction.options.getString('target');
-    const ownerContext = resolvePlanOwnerContext({
-      guildId: interaction.guildId,
-      userId: interaction.user.id,
-      target: requestedTarget,
-    });
-
-    logger.info(
-      `Slash command /plan ${subcommand} called by ${interaction.user.id} target=${ownerContext.target} ownerType=${ownerContext.ownerType}`
-    );
-
     try {
       if (subcommand === 'list') {
+        logger.info(`Slash command /plan list called by ${interaction.user.id}`);
+
         const embed = new EmbedBuilder()
           .setTitle('Reading Plan Templates')
           .setColor('#0099ff')
@@ -360,6 +351,17 @@ module.exports = {
         await interaction.reply({ embeds: [embed], ephemeral: true });
         return;
       }
+
+      const requestedTarget = interaction.options.getString('target');
+      const ownerContext = resolvePlanOwnerContext({
+        guildId: interaction.guildId,
+        userId: interaction.user.id,
+        target: requestedTarget,
+      });
+
+      logger.info(
+        `Slash command /plan ${subcommand} called by ${interaction.user.id} target=${ownerContext.target} ownerType=${ownerContext.ownerType}`
+      );
 
       if (subcommand === 'start') {
         const planType = interaction.options.getString('plan_type');

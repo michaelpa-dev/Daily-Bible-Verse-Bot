@@ -3,7 +3,7 @@ function resolvePlanOwnerContext(input) {
   const userId = input && input.userId ? String(input.userId).trim() : '';
 
   if (!userId) {
-    throw new Error('userId is required.');
+    throw new Error('Internal error: userId was not provided in interaction context.');
   }
 
   const rawTarget = input && input.target != null ? String(input.target).trim().toLowerCase() : '';
