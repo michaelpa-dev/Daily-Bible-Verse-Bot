@@ -1,6 +1,6 @@
 {
   "name": "daily-bible-verse-bot",
-  "version": "0.5.0",
+  "version": "0.5.3",
   "private": true,
   "main": "js/bot.js",
   "engines": {
