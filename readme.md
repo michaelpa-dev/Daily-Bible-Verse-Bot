@@ -44,6 +44,29 @@ For managed deployments (`production` / `canary`), set `BOT_TOKEN` in GitHub env
 - Run tests:
   - `npm test`
 
+## Slash Command Sync (Dev Guild Fast-Sync)
+
+Use the sync script to push the latest slash command definitions on demand.
+It uses Discord REST `PUT`, so each run is idempotent and replaces the full command set.
+
+- Sync to dev guild (fast propagation):
+  - `DISCORD_TOKEN=... CLIENT_ID=... DEV_GUILD_ID=... npm run sync:commands:guild`
+- Sync globally (slower propagation):
+  - `DISCORD_TOKEN=... CLIENT_ID=... npm run sync:commands:global`
+
+`npm start` does not publish global commands.
+
+### Why I Don’t See New Commands
+
+- Guild vs global propagation:
+  - Guild commands should appear quickly (dev fast-sync mode).
+  - Global commands can take significantly longer to propagate.
+- OAuth scopes:
+  - Ensure the bot was invited with `applications.commands` (and `bot`) scope.
+- App identity mismatch:
+  - Confirm `CLIENT_ID` and `DISCORD_TOKEN` belong to the same Discord application.
+  - Confirm `DEV_GUILD_ID` points to your intended development guild.
+
 ## Automatic Deployment Pipeline
 
 This repo deploys to EC2 using GitHub Releases + AWS SSM RunCommand (no SSH required).
