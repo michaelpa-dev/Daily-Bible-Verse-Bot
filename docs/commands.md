@@ -23,7 +23,7 @@ This bot is primarily operated via Discord slash commands.
     - `Channel` posts in-channel (default)
     - `DM` sends the passage to your DMs (recommended for long passages)
 - `/read <reference>`
-  - Starts a DM “page-turner” reader session with buttons:
+  - Starts a DM "page-turner" reader session with buttons:
     - Prev/Next page
     - Prev/Next chapter (cross-book navigation supported)
     - Change book (group + book selector)
@@ -38,6 +38,7 @@ This bot is primarily operated via Discord slash commands.
     - The bot will show what it resolved to (example: `Resolved: 1 Samuel (1SA) 3`).
 - `/plan ...`
   - Reading plans (see `docs/reading-plans.md`).
+  - Note: commands are registered per-server. To create/manage a personal plan that DMs you daily, use `target: Me (DM)` on `/plan` subcommands.
 - `/stats`
   - Show basic usage stats.
 - `/support`

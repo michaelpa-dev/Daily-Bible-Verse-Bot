@@ -21,38 +21,39 @@ Cost principle: there is **no external scheduler** (no paid AWS services). Sched
 
 ### Start
 
-- `/plan start plan_type:<type> [scope] [books] [chapters_per_day|verses_per_day|minutes_per_day] [timezone] [post_time] [start_date] [channel]`
+- `/plan start [target] plan_type:<type> [scope] [books] [chapters_per_day|verses_per_day|minutes_per_day] [timezone] [post_time] [start_date] [channel]`
 
 Notes:
 
-- In a guild, this creates/overwrites a **guild plan** and posts to the selected channel daily.
-- In DMs, this creates/overwrites a **user plan** and DMs you daily.
+- Slash commands are registered per-server (guild) for fast iteration, so `/plan` is typically invoked from a server channel.
+- In a guild, the default `target` is `Server` which creates/overwrites a **guild plan** and posts to the selected channel daily.
+- To create/overwrite a **personal plan** that DMs you daily, set `target` to `Me (DM)` (even when invoking from a server).
 
 ### Status
 
-- `/plan status`
+- `/plan status [target]`
   - Shows current status, day index, timezone, and post time.
 
 ### Today
 
-- `/plan today`
-  - Shows today’s reading with pagination (ephemeral in guilds to keep channels clean).
+- `/plan today [target]`
+  - Shows today's reading with pagination (ephemeral in guilds to keep channels clean).
 
 ### Pause / Resume / Stop
 
-- `/plan pause`
-- `/plan resume`
-- `/plan stop`
+- `/plan pause [target]`
+- `/plan resume [target]`
+- `/plan stop [target]`
 
 ### Skip
 
-- `/plan skip [days]`
+- `/plan skip [target] [days]`
   - Skips ahead by N days in the plan sequence.
 
 ## Scheduling Behavior
 
 - On startup, the bot loads all active plans and schedules them.
-- If the bot was offline at the scheduled post time, it posts once with a “late” note (at most once per day).
+- If the bot was offline at the scheduled post time, it posts once with a "late" note (at most once per day).
 
 ## Pagination and API Cost Control
 

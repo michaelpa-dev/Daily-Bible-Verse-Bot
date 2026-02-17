@@ -14,6 +14,7 @@ Then:
 - It:
   - Starts the canary EC2 instance if stopped
   - Tags it with `CanaryLastPushEpoch` (resets the 4 hour auto-stop timer)
+  - Waits for the instance to be reachable via SSM (PingStatus=Online) to avoid delayed RunCommand executions
   - Syncs `BOT_TOKEN` from GitHub environment secrets into SSM Parameter Store (SecureString)
   - Resolves a short-lived signed GitHub download URL for the release asset (so private repos work without putting GitHub tokens on EC2)
   - Runs the deploy via SSM

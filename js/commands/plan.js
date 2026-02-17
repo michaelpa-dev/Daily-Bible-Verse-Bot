@@ -10,10 +10,16 @@ const { createPaginatedMessage } = require('../services/paginationInteractions.j
 const { fetchPassageForBookChapter } = require('../services/bibleApiWeb.js');
 const { formatPassageLines } = require('../services/passageFormatter.js');
 const { logCommandError } = require('../services/botOps.js');
+const { resolvePlanOwnerContext } = require('../services/planTarget.js');
 const { normalizeBookId } = require('../constants/books.js');
 
 const DEFAULT_TIMEZONE = 'America/New_York';
 const DEFAULT_POST_TIME = '08:00';
+
+const PLAN_TARGET_CHOICES = [
+  { name: 'Server (post in channel)', value: 'server' },
+  { name: 'Me (DM)', value: 'me' },
+];
 
 function formatLocalDate(timezone, date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -153,6 +159,13 @@ module.exports = {
         .setDescription('Start or replace a reading plan (guild or DM)')
         .addStringOption((option) =>
           option
+            .setName('target')
+            .setDescription('Where this plan lives (server posts vs your DMs)')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
+        )
+        .addStringOption((option) =>
+          option
             .setName('plan_type')
             .setDescription('Plan template')
             .setRequired(true)
@@ -233,24 +246,76 @@ module.exports = {
         )
     )
     .addSubcommand((subcommand) =>
-      subcommand.setName('status').setDescription('Show your current plan status')
+      subcommand
+        .setName('status')
+        .setDescription('Show your current plan status')
+        .addStringOption((option) =>
+          option
+            .setName('target')
+            .setDescription('View the server plan or your personal DM plan')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
+        )
     )
     .addSubcommand((subcommand) =>
-      subcommand.setName('today').setDescription('Show today’s reading (with pagination)')
+      subcommand
+        .setName('today')
+        .setDescription("Show today's reading (with pagination)")
+        .addStringOption((option) =>
+          option
+            .setName('target')
+            .setDescription('View the server plan or your personal DM plan')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
+        )
     )
     .addSubcommand((subcommand) =>
-      subcommand.setName('pause').setDescription('Pause the current plan')
+      subcommand
+        .setName('pause')
+        .setDescription('Pause the current plan')
+        .addStringOption((option) =>
+          option
+            .setName('target')
+            .setDescription('Pause the server plan or your personal DM plan')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
+        )
     )
     .addSubcommand((subcommand) =>
-      subcommand.setName('resume').setDescription('Resume the current plan')
+      subcommand
+        .setName('resume')
+        .setDescription('Resume the current plan')
+        .addStringOption((option) =>
+          option
+            .setName('target')
+            .setDescription('Resume the server plan or your personal DM plan')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
+        )
     )
     .addSubcommand((subcommand) =>
-      subcommand.setName('stop').setDescription('Stop the current plan')
+      subcommand
+        .setName('stop')
+        .setDescription('Stop the current plan')
+        .addStringOption((option) =>
+          option
+            .setName('target')
+            .setDescription('Stop the server plan or your personal DM plan')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
+        )
     )
     .addSubcommand((subcommand) =>
       subcommand
         .setName('skip')
         .setDescription('Skip ahead in the plan by N days')
+        .addStringOption((option) =>
+          option
+            .setName('target')
+            .setDescription('Skip the server plan or your personal DM plan')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
+        )
         .addIntegerOption((option) =>
           option
             .setName('days')
@@ -265,15 +330,10 @@ module.exports = {
     await addCommandExecution();
     const subcommand = interaction.options.getSubcommand();
 
-    const ownerType = interaction.guildId ? 'guild' : 'user';
-    const ownerId = interaction.guildId ? interaction.guildId : interaction.user.id;
-
-    logger.info(
-      `Slash command /plan ${subcommand} called by ${interaction.user.id} ownerType=${ownerType}`
-    );
-
     try {
       if (subcommand === 'list') {
+        logger.info(`Slash command /plan list called by ${interaction.user.id}`);
+
         const embed = new EmbedBuilder()
           .setTitle('Reading Plan Templates')
           .setColor('#0099ff')
@@ -291,6 +351,17 @@ module.exports = {
         await interaction.reply({ embeds: [embed], ephemeral: true });
         return;
       }
+
+      const requestedTarget = interaction.options.getString('target');
+      const ownerContext = resolvePlanOwnerContext({
+        guildId: interaction.guildId,
+        userId: interaction.user.id,
+        target: requestedTarget,
+      });
+
+      logger.info(
+        `Slash command /plan ${subcommand} called by ${interaction.user.id} target=${ownerContext.target} ownerType=${ownerContext.ownerType}`
+      );
 
       if (subcommand === 'start') {
         const planType = interaction.options.getString('plan_type');
@@ -328,13 +399,13 @@ module.exports = {
 
         const pace = paceOverride || { paceType: defaults.paceType, paceValue: defaults.paceValue };
         const channelId =
-          ownerType === 'guild'
+          ownerContext.ownerType === 'guild'
             ? interaction.options.getChannel('channel')?.id || interaction.channelId
             : null;
 
         const plan = await upsertPlan({
-          ownerType,
-          ownerId,
+          ownerType: ownerContext.ownerType,
+          ownerId: ownerContext.ownerId,
           channelId,
           planType,
           scope,
@@ -349,9 +420,9 @@ module.exports = {
         await refreshPlanSchedules(interaction.client);
 
         const note =
-          ownerType === 'guild'
+          ownerContext.ownerType === 'guild'
             ? `Daily posts will go to <#${plan.channelId}> at ${plan.postTime} (${plan.timezone}).`
-            : `Daily DMs will be sent at ${plan.postTime} (${plan.timezone}).`;
+            : `Daily DMs will be sent at ${plan.postTime} (${plan.timezone}).\nManage it from a server with \`/plan status target:Me (DM)\`.`;
 
         await interaction.reply({
           embeds: [buildPlanSummaryEmbed(plan, { note })],
@@ -360,10 +431,14 @@ module.exports = {
         return;
       }
 
-      const plan = await getPlan(ownerType, ownerId);
+      const plan = await getPlan(ownerContext.ownerType, ownerContext.ownerId);
       if (!plan) {
+        const suffix =
+          ownerContext.ownerType === 'user'
+            ? ' Use `/plan start target:Me (DM)` to create a personal plan.'
+            : ' Use `/plan start` to create a server plan.';
         await interaction.reply({
-          content: 'No reading plan found. Use `/plan start` to create one.',
+          content: `No reading plan found for this target.${suffix}`,
           ephemeral: true,
         });
         return;
