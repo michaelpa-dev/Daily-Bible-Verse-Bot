@@ -1,12 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { ApplicationCommandOptionType } = require('discord.js');
 
 const planCommand = require('../js/commands/plan.js');
 
 test('/plan start keeps required options before optional options', () => {
   const commandJson = planCommand.data.toJSON();
   const startSubcommand = commandJson.options.find(
-    (option) => option.type === 1 && option.name === 'start'
+    (option) => option.type === ApplicationCommandOptionType.Subcommand && option.name === 'start'
   );
 
   assert.ok(startSubcommand, 'Expected /plan start subcommand to exist');
