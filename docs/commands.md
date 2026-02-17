@@ -41,6 +41,8 @@ This bot is primarily operated via Discord slash commands.
   - Note: commands are registered per-server. To create/manage a personal plan that DMs you daily, use `target: Me (DM)` on `/plan` subcommands.
 - `/stats`
   - Show basic usage stats.
+- `/give`
+  - Ways to support development (GitHub Sponsors + crypto addresses).
 - `/support`
   - Link to the GitHub issue tracker for help/bugs.
 
