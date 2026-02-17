@@ -11,7 +11,9 @@ function parseBoolean(value) {
 }
 
 function getModeFromEnv() {
-  const rawMode = String(process.env.MODE || '').trim().toLowerCase();
+  const rawMode = String(process.env.MODE || '')
+    .trim()
+    .toLowerCase();
   const publishGlobal = parseBoolean(process.env.PUBLISH_GLOBAL);
 
   if (rawMode) {
@@ -93,7 +95,8 @@ async function syncCommands() {
   const token = requireEnv('DISCORD_TOKEN');
   const clientId = requireEnv('CLIENT_ID');
   const publishGlobal = parseBoolean(process.env.PUBLISH_GLOBAL);
-  const devGuildId = mode === 'guild' ? requireEnv('DEV_GUILD_ID') : requireEnv('DEV_GUILD_ID', { optional: true });
+  const devGuildId =
+    mode === 'guild' ? requireEnv('DEV_GUILD_ID') : requireEnv('DEV_GUILD_ID', { optional: true });
 
   console.log('Command sync configuration:');
   console.log(`- MODE: ${mode}`);
