@@ -8,6 +8,8 @@
   },
   "scripts": {
     "start": "node ./js/bot.js",
+    "sync:commands:guild": "cross-env MODE=guild PUBLISH_GLOBAL=false node ./scripts/sync-commands.js",
+    "sync:commands:global": "cross-env MODE=global PUBLISH_GLOBAL=true node ./scripts/sync-commands.js",
     "lint": "eslint eslint.config.js js test scripts",
     "lint:fix": "eslint eslint.config.js js test scripts --fix",
     "format": "prettier eslint.config.js js test scripts cfg .github --write",
