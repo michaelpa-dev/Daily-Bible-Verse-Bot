@@ -37,6 +37,23 @@ function requireEnv(name, options = {}) {
   return value;
 }
 
+function resolveDiscordToken() {
+  const discordToken = requireEnv('DISCORD_TOKEN', { optional: true });
+  if (discordToken) {
+    return { token: discordToken, source: 'DISCORD_TOKEN' };
+  }
+
+  const botToken = requireEnv('BOT_TOKEN', { optional: true });
+  if (botToken) {
+    return { token: botToken, source: 'BOT_TOKEN' };
+  }
+
+  throw new Error(
+    'Missing required environment variable: DISCORD_TOKEN or BOT_TOKEN. ' +
+      'Set one of these variables and run the sync command again.'
+  );
+}
+
 function loadCommandPayloads() {
   const commandsDir = path.join(__dirname, '..', 'js', 'commands');
   if (!fs.existsSync(commandsDir)) {
@@ -92,7 +109,7 @@ async function syncCommands() {
     throw new Error(`Invalid MODE "${mode}". Use MODE=guild or MODE=global.`);
   }
 
-  const token = requireEnv('DISCORD_TOKEN');
+  const { token, source: tokenSource } = resolveDiscordToken();
   const clientId = requireEnv('CLIENT_ID');
   const publishGlobal = parseBoolean(process.env.PUBLISH_GLOBAL);
   const devGuildId =
@@ -102,6 +119,7 @@ async function syncCommands() {
   console.log(`- MODE: ${mode}`);
   console.log(`- CLIENT_ID: ${clientId}`);
   console.log(`- DEV_GUILD_ID: ${devGuildId || '(not required for global mode)'}`);
+  console.log(`- TOKEN_SOURCE: ${tokenSource}`);
   console.log(`- PUBLISH_GLOBAL: ${publishGlobal}`);
 
   const payloads = loadCommandPayloads();
@@ -130,6 +148,11 @@ async function syncCommands() {
 }
 
 syncCommands().catch((error) => {
-  console.error(`Command sync failed: ${error.message}`);
+  console.error('Command sync failed.');
+  if (error && error.stack) {
+    console.error(error.stack);
+  } else {
+    console.error(error);
+  }
   process.exit(1);
 });

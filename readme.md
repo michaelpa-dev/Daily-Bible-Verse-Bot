@@ -50,9 +50,11 @@ Use the sync script to push the latest slash command definitions on demand.
 It uses Discord REST `PUT`, so each run is idempotent and replaces the full command set.
 
 - Sync to dev guild (fast propagation):
-  - `DISCORD_TOKEN=... CLIENT_ID=... DEV_GUILD_ID=... npm run sync:commands:guild`
+  - `BOT_TOKEN=... CLIENT_ID=... DEV_GUILD_ID=... npm run sync:commands:guild`
 - Sync globally (slower propagation):
-  - `DISCORD_TOKEN=... CLIENT_ID=... npm run sync:commands:global`
+  - `BOT_TOKEN=... CLIENT_ID=... npm run sync:commands:global`
+
+`DISCORD_TOKEN` is also supported as an alias for command sync, but `BOT_TOKEN` is the standard env var used across this repo.
 
 `npm start` does not publish global commands.
 
