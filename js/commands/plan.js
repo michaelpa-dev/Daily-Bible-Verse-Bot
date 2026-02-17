@@ -159,13 +159,6 @@ module.exports = {
         .setDescription('Start or replace a reading plan (guild or DM)')
         .addStringOption((option) =>
           option
-            .setName('target')
-            .setDescription('Where this plan lives (server posts vs your DMs)')
-            .setRequired(false)
-            .addChoices(...PLAN_TARGET_CHOICES)
-        )
-        .addStringOption((option) =>
-          option
             .setName('plan_type')
             .setDescription('Plan template')
             .setRequired(true)
@@ -176,6 +169,13 @@ module.exports = {
               { name: 'New Testament (90 days)', value: 'new-testament-90' },
               { name: 'Custom', value: 'custom' }
             )
+        )
+        .addStringOption((option) =>
+          option
+            .setName('target')
+            .setDescription('Where this plan lives (server posts vs your DMs)')
+            .setRequired(false)
+            .addChoices(...PLAN_TARGET_CHOICES)
         )
         .addStringOption((option) =>
           option
