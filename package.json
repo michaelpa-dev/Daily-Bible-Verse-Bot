@@ -8,10 +8,10 @@
   },
   "scripts": {
     "start": "node ./js/bot.js",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier . --write",
-    "format:check": "prettier . --check",
+    "lint": "eslint eslint.config.js js test scripts",
+    "lint:fix": "eslint eslint.config.js js test scripts --fix",
+    "format": "prettier eslint.config.js js test scripts cfg .github --write",
+    "format:check": "prettier eslint.config.js js test scripts cfg .github --check",
     "test": "cross-env NODE_ENV=test node --test --test-concurrency=1 \"test/*.test.js\""
   },
   "dependencies": {
